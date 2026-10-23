@@ -1,0 +1,12 @@
+{
+  "name": "jean-sre",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Jean SRE Autonomous 24/7 SRE Daemon & 6-MCP Harness",
+  "main": "src/harness.js",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "node src/harness.js",
+    "sweep": "node src/jean_sre_sweep.js"
+  }
+}

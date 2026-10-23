@@ -1,0 +1,40 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies & Build Artifacts
+node_modules/
+src/node_modules/
+__pycache__/
+*.pyc
+.venv/
+
+# Large Datasets & Model Weights (Hosted on Hugging Face @krush420)
+data/*.jsonl
+data/*.json
+data/distillation/
+data/public/*.jsonl
+models/*/*.safetensors
+models/*/*.bin
+models/*/*.gguf
+models/*/checkpoint-*/
+models/*/tokenizer.json
+
+# Private Runtime State & Homelab Audit Logs
+.agent/
+AGENTS.md
+JEAN_SRE_README.md
+*INFLIGHT*.md
+JEAN_SESSION_*.md
+JEAN_SRE_LESSONS.json
+JEAN_SRE_ROTATION.json
+jean_*_log.md
+jean_homelab_cleanup_backlog.md
+scratch_test.js
+task.md
+src/test_actual_messages.js
+src/test_sanitize.js
+src/test_all_tools.mjs
+scripts/run_close_bridge.js
+scripts/run_continue_bridge.js

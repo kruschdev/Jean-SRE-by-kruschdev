@@ -1,0 +1,104 @@
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+services:
+  jean-harness:
+    build:
+      context: ../..
+      dockerfile: projects/jean-sre/Dockerfile.agent
+    user: "root"
+    network_mode: "host"
+    pid: "host"
+    volumes:
+      - ../../projects:/app/projects
+      - .:/app/projects/jean-sre
+      - ../../lib:/app/lib
+      - ../../lib-py:/app/lib-py
+      - ~/.krusch-fs:/root/.krusch-fs
+      - ${HOMELAB_PATH:-/home/agent/homelab}/projects:${HOMELAB_PATH:-/home/agent/homelab}/projects
+      - ${HOMELAB_PATH:-/home/agent/homelab}/lib:${HOMELAB_PATH:-/home/agent/homelab}/lib
+      - ${HOMELAB_PATH:-/home/agent/homelab}/lib-py:${HOMELAB_PATH:-/home/agent/homelab}/lib-py
+      - ${HOMELAB_PATH:-/home/agent/homelab}/scripts:${HOMELAB_PATH:-/home/agent/homelab}/scripts
+      - ${HOMELAB_PATH:-/home/agent/homelab}/configs:${HOMELAB_PATH:-/home/agent/homelab}/configs
+      - ${HOMELAB_PATH:-/home/agent/homelab}/.agent:${HOMELAB_PATH:-/home/agent/homelab}/.agent
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.ssh/id_ed25519:/home/node/.ssh/id_ed25519:ro
+      - ~/.ssh/known_hosts:/home/node/.ssh/known_hosts:ro
+      - ~/.ssh/config:/home/node/.ssh/config:ro
+    env_file: .env
+    environment:
+      - DBOS_DATABASE_URL=${DBOS_DATABASE_URL}
+      - DATABASE_URL=${DATABASE_URL}
+      - PERSONA_OLLAMA_URL=${PERSONA_OLLAMA_URL}
+      - EXECUTOR_OLLAMA_URL=${EXECUTOR_OLLAMA_URL}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - OLLAMA_EMBED_HOST=${OLLAMA_EMBED_HOST}
+      - PERSONA_MODEL=${PERSONA_MODEL:-qwen3-coder-30b-moe:latest}
+      - EXECUTOR_MODEL=${EXECUTOR_MODEL:-gemma4:e4b}
+      - PYTHONUNBUFFERED=1
+      - NODE_PATH=/app/node_modules
+      - PORT=3005
+    command: >
+      bash -c "
+        mkdir -p /root/.ssh/sockets &&
+        cp -f /home/node/.ssh/* /root/.ssh/ 2>/dev/null || true &&
+        sed -i 's|~/.ssh/id_ed25519|/root/.ssh/id_ed25519|g' /root/.ssh/config 2>/dev/null || true &&
+        chown -R root:root /root/.ssh &&
+        chmod 700 /root/.ssh /root/.ssh/sockets &&
+        chmod 600 /root/.ssh/id_ed25519 /root/.ssh/config /root/.ssh/known_hosts 2>/dev/null || true &&
+        for pkg in krusch-git pg-git krusch-context-mcp krusch-infra-mcp krusch-sentinel-mcp krusch-sequential-mcp krusch-consensus-mcp krusch-pocketlawyer-mcp krusch-frontend-mcp krusch-fleet-mcp; do
+          if [ ! -d \"/app/projects/$$pkg/node_modules\" ] && [ -f \"/app/projects/$$pkg/package.json\" ]; then
+            npm install --prefix \"/app/projects/$$pkg\";
+          fi;
+        done &&
+        cd /app/projects/jean-sre/src &&
+        exec node harness.js
+      "
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3005/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    logging: *logging
+
+  jean-sweep:
+    build:
+      context: ../..
+      dockerfile: projects/jean-sre/Dockerfile.agent
+    user: "root"
+    network_mode: "host"
+    pid: "host"
+    volumes:
+      - .:/app/projects/jean-sre
+      - ../../lib:/app/lib
+      - ../../lib-py:/app/lib-py
+      - ${HOMELAB_PATH:-/home/agent/homelab}/projects:${HOMELAB_PATH:-/home/agent/homelab}/projects
+      - ${HOMELAB_PATH:-/home/agent/homelab}/lib:${HOMELAB_PATH:-/home/agent/homelab}/lib
+      - ${HOMELAB_PATH:-/home/agent/homelab}/lib-py:${HOMELAB_PATH:-/home/agent/homelab}/lib-py
+      - ${HOMELAB_PATH:-/home/agent/homelab}/scripts:${HOMELAB_PATH:-/home/agent/homelab}/scripts
+      - ${HOMELAB_PATH:-/home/agent/homelab}/configs:${HOMELAB_PATH:-/home/agent/homelab}/configs
+      - ${HOMELAB_PATH:-/home/agent/homelab}/.agent:${HOMELAB_PATH:-/home/agent/homelab}/.agent
+      - ${HOMELAB_PATH:-/home/agent/homelab}/.git:${HOMELAB_PATH:-/home/agent/homelab}/.git:ro
+    env_file: .env
+    environment:
+      - DBOS_DATABASE_URL=${DBOS_DATABASE_URL}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - PERSONA_OLLAMA_URL=${PERSONA_OLLAMA_URL}
+      - EXECUTOR_OLLAMA_URL=${EXECUTOR_OLLAMA_URL}
+      - OLLAMA_EMBED_HOST=${OLLAMA_EMBED_HOST}
+      - JEAN_SWEEP_INTERVAL_MINUTES=${JEAN_SWEEP_INTERVAL_MINUTES:-15}
+      - JEAN_AGENT_URL=http://localhost:3005
+      - NODE_PATH=/app/node_modules
+      - JEAN_SWEEP_MODE=sweep
+    command: >
+      bash -c "cd /app/projects/jean-sre && exec node src/jean_sre_sweep.js"
+    depends_on:
+      jean-harness:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging

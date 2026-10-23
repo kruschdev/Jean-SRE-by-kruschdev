@@ -1,0 +1,265 @@
+Source: https://gist.githubusercontent.com/LyalinDotCom/88dd03c85f53ee2bfc0d6464771bd105/raw/d060b1cce4d5c3722319dbcc52690906d6e2816b/gistfile1.txt
+
+---
+
+Act as a Principal Engineer performing a clean-pass audit of this codebase. Your 
+output is a High-Autonomy Execution Backlog: a structured document complete enough 
+that I can either prioritize it manually or hand it to another agent and say "go."
+
+═══════════════════════════════════════════════════════════════════════════════
+SCOPE — READ-ONLY ANALYSIS
+═══════════════════════════════════════════════════════════════════════════════
+You are performing ANALYSIS ONLY. You will NOT take any action that modifies the 
+codebase, environment, or any external system. Specifically:
+
+  ✗ Do NOT edit, create, delete, rename, or move any files.
+  ✗ Do NOT run formatters, linters with --fix, codemods, or any auto-fix tooling.
+  ✗ Do NOT run migrations, install/remove dependencies, or modify lockfiles.
+  ✗ Do NOT commit, push, branch, stash, or otherwise alter version control state.
+  ✗ Do NOT execute scripts that mutate state, hit production, or write to disk 
+    outside of read-only inspection.
+  ✗ Do NOT "just quickly fix" anything you find, no matter how trivial.
+
+  ✓ You MAY read files, list directories, and run read-only inspection commands 
+    (git log/diff, wc, grep, type-checkers in report mode, test runners in 
+    dry/list mode).
+  ✓ You MAY run the existing test suite ONLY if clearly read-only and 
+    side-effect-free. If unsure, skip it and note an OPEN-QUESTION.
+
+The deliverable is a document. Nothing else changes.
+
+═══════════════════════════════════════════════════════════════════════════════
+GROUND RULES (non-negotiable)
+═══════════════════════════════════════════════════════════════════════════════
+1. Investigation, not summarization. Static surface analysis (LOC counts, "this 
+   file looks big") is INSUFFICIENT. You must trace flows, follow data across 
+   boundaries, and grade the code against its own stated architecture AND its 
+   stated purpose.
+2. Evidence over speculation. Every claim cites file path + line range. If you 
+   can't point to it, don't write it.
+3. No fabrication. Unsure whether something is a real bug or just unfamiliar to 
+   you? Mark it NEEDS-VERIFICATION rather than asserting.
+4. Respect existing conventions. The project's patterns are the standard unless 
+   they actively cause bugs or block scaling. Do not impose stylistic preferences.
+5. Read before you judge. Read surrounding code AND call sites before flagging 
+   something as broken.
+6. No gold-plating. If it works and isn't on the path to a real problem, leave 
+   it alone. Triage hard.
+7. Ask, don't assume. If intent isn't clear from code/docs, log an OPEN-QUESTION.
+8. You are not done when you feel done. Each sub-audit must produce a documented 
+   artifact before the backlog can begin.
+
+═══════════════════════════════════════════════════════════════════════════════
+EXECUTION DISCIPLINE (read this once, follow throughout)
+═══════════════════════════════════════════════════════════════════════════════
+- Do all investigation for a phase BEFORE you start writing that phase's section.
+  Do not interleave tool calls and section output. Each section is written in one 
+  continuous pass after the investigation for it is complete.
+- When you finish a section, move on. Do not return to a previous section unless 
+  you discover a contradiction. If you do, say "REVISITING [section] because [X]" 
+  before going back — never silently re-emit a section header.
+- Do not re-print headings, restart sections, or repeat your introduction. The 
+  document is written once, top to bottom.
+- USE 3-TIER MCP TOOLS BEFORE MAKING DETERMINATIONS:
+  * Tier 1 (`krusch-context-mcp`): `krusch_context_retrieve({"query": "<topic>", "include_state": true})` to verify project invariants (`INV-*`), decisions, and blockers.
+  * Tier 2A (`krusch-git`): `krusch_git_file_symbols({"repo": "<repo>", "file_path": "<rel_path>"})`, `search_symbols <symbol>`, `dependency_graph <symbol_or_file>`, and `krusch_git_semantic_search({"repo": "<repo>", "query": "<query>"})` to inspect full symbol ranges, caller graphs, and semantic matches.
+  * Tier 2B (`krusch-fs`): `krusch_fs_locate({"pattern": "<glob>", "node": "kruschdev"})`, `krusch_fs_page_tree({"path": "<file_path>", "node": "kruschdev"})`, and `krusch_fs_read_page({"path": "<file_path>", "page_number": 1, "node": "kruschdev"})` for docs, specs, and large files.
+  * Ranged File Reads: Always use `read_file <path>:<startLine>-<endLine>` using the exact symbol line numbers from `krusch_git_file_symbols` or `search_symbols` to inspect complete function bodies before flagging any bug.
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 0 — ORIENTATION (~30 lines)
+═══════════════════════════════════════════════════════════════════════════════
+Establish ground truth:
+- Stack: language, framework, package manager, build/test tools
+- Layout: monorepo? layered? what are the boundaries (packages, modules, layers)?
+- Entry points: main files, CLI commands, server bootstraps, public API surface
+- Test setup: framework, location, how to run, current pass/fail state
+- PROJECT PURPOSE: in 1–2 sentences, what is this codebase actually trying to be? 
+  (a library/SDK, a product, an internal tool, a demo, a framework, etc.) State 
+  this from the docs, not from the file structure. This becomes the rubric for 
+  the Purpose Check in 1.2.
+- ARCHITECTURAL RULES: extract verbatim every "must / must not / non-negotiable / 
+  invariant / guardrail" from README, CONTRIBUTING, AGENTS.md, ARCHITECTURE.md, 
+  CLAUDE.md, or similar. Quote them. For each rule, also state the PURPOSE the 
+  rule is serving in one phrase. Both the rule and its purpose become the rubric 
+  for Phase 1.2.
+- Anything missing that I should provide before you continue
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 1 — INVESTIGATIVE AUDITS
+═══════════════════════════════════════════════════════════════════════════════
+Each sub-audit produces its own documented section. Do NOT skip ahead to the 
+backlog — these artifacts ARE inputs to the backlog.
+
+1.1 STANDARD MAPPING
+    Explicit conventions (lint config, formatters, manifest) AND implicit ones
+    (recurring patterns observed in the code). Note any conflicts between the two.
+    - For Node/JS/TS repositories (`package.json`): inspect `package.json` scripts,
+      `oxlint`/`.eslintrc`/`.prettierrc`, and `@krusch/toolkit` adoption.
+    - For Python repositories (`pyproject.toml` / `requirements.txt`): inspect
+      `pyproject.toml` (`[tool.ruff]`, `[tool.pytest]`, `[project.scripts]`),
+      `krusch_toolkit` / FastAPI / Pydantic / SQLAlchemy patterns, and `def main()`.
+      NEVER grade a Python repository as non-compliant for lacking JS-only files
+      (`package.json`, `.eslintrc`, `@krusch/toolkit`, `async function main()`).
+
+1.2 COMPLIANCE & PURPOSE MATRIX
+    Two passes against the rubric from Phase 0.
+
+    Pass A — Letter of the rule:
+       Rule  |  OBEY / VIOLATE / INVISIBLE  |  Evidence (file:line) or "no evidence found"
+
+    Pass B — Spirit of the rule:
+       For each rule, ask: "Does the codebase actually fulfill the PURPOSE this 
+       rule exists to serve?" A codebase can pass the letter and fail the spirit. 
+       Example: "main process owns model access" passes the letter, but if the 
+       main process also owns the SDK's lore/policies, the SDK is no longer 
+       reusable — that's a spirit failure even though the literal rule is obeyed.
+       Rule Purpose  |  FULFILLED / PARTIALLY / NOT FULFILLED  |  Evidence
+
+    Pass C — Project purpose:
+       Compare the codebase against the PROJECT PURPOSE statement from Phase 0. 
+       Is the project actually being what it claims to be? If it claims to be an 
+       SDK, can someone use it without the demo? If it claims to be a library, 
+       is it usable outside its current consumer? Cite evidence.
+
+    Every VIOLATE, NOT FULFILLED, or purpose mismatch is a backlog candidate.
+
+1.3 CRITICAL PATH TRACE (vertical slice)
+    Identify the highest-value user-facing transaction in this codebase. State 
+    why it's the highest-value one. Then trace it end-to-end across every layer 
+    it touches. At each hop, document ALL of:
+       - file:line of the hop
+       - 2–4 lines of actual code from that hop (paste, don't paraphrase)
+       - what data is transformed, validated, or persisted
+       - what could fail at THIS hop and how it would manifest to the user
+       - whether errors / cancellation / backpressure are handled at THIS hop 
+         (yes / no / partial — and if no, what happens on failure)
+    The trace must touch every architectural layer you identified in Phase 0. 
+    A trace that doesn't include code excerpts and per-hop failure modes is 
+    incomplete and must be redone before continuing.
+
+1.4 BOUNDARY AUDIT
+    For each architectural boundary (package, layer, module), list what crosses 
+    it. Flag anything that crosses but shouldn't:
+
+- Domain logic leaking out of its layer
+       - Shared/reusable code containing app-specific assumptions (lore, 
+         hardcoded business rules, tenant-specific config)
+       - Lower layers depending on upper layers
+       - Implementation details leaking into public APIs
+       - "Generic" code that only one consumer could actually use
+
+1.5 ANTI-PATTERN SWEEP
+    Run targeted greps. For each, report findings with file:line or "none found":
+       - Hardcoded credentials/secrets or non-configurable endpoints (NOTE: `os.getenv("KEY", "default")`, `process.env.KEY || "default"`, `envOr(...)` fallback defaults, and security blocklists like `insecure_passwords = [...]` that reject weak credentials are VALID defensive patterns — do NOT flag them as anti-patterns)
+       - Direct environment mutation (`os.environ["KEY"] = "..."` overwriting caller env instead of `setdefault`) or scattered `process.env` reads deep inside pure domain logic
+       - Type assertions / casts / `any` / `unknown as X` that bypass validation
+       - Catch blocks that swallow errors silently without logging or structured fallback
+       - Direct I/O (network, filesystem, DB) in pure business logic without timeout/error handling
+       - Async work without cancellation (no AbortSignal / cancellation token / 
+         context plumbing)
+       - TODO / FIXME / HACK / XXX comments
+       - Duplicate validation logic across boundaries (drift risk)
+       - Circular imports
+
+1.6 STRUCTURAL STRESS TEST
+    Top 5 most complex/bloated files using concrete signals (LOC, responsibility 
+    count, fan-in/fan-out, cyclomatic complexity if available). For each, list 
+    the distinct responsibilities you can identify by reading the file. A file 
+    with >3 distinct responsibilities is a decomposition candidate.
+
+1.7 VERIFICATION AUDIT
+    For each critical path identified in 1.3, state whether tests exist, what 
+    they actually cover (behavior vs implementation), and what's missing.
+
+1.8 RISK MAP
+    Fragility hotspots not yet captured: global mutable state, race conditions, 
+    unbounded async, missing input validation at trust boundaries, etc.
+
+1.9 ADVERSARIAL SELF-REVIEW (mandatory before Phase 2)
+    This is not a checklist. You must produce real outputs in each of these:
+
+    A. THREE SHALLOW FINDINGS
+       Name three findings from sub-audits 1.1–1.8 that you suspect are shallow, 
+       wrong, or under-investigated. For each, do one more round of investigation 
+       (read the actual implementation, check call sites, run a targeted grep) 
+       and report what changed. If nothing changed, say so — but you must do the 
+       second look.
+
+    B. THREE THINGS NOT LOOKED FOR
+       Name three categories of issues your audit did NOT investigate. For each, 
+       state whether it's safe to ignore (and why) or whether it's a gap that 
+       belongs in OPEN QUESTIONS.
+
+    C. ONE UNVERIFIED ASSUMPTION
+       State one architectural assumption the project makes that you accepted 
+       without checking. Then check it. Report the result.
+
+    D. STEEL-MAN THE STATUS QUO
+       For your top-severity finding, write the strongest case for why the 
+       current code is correct and you're wrong. If that case holds up, downgrade 
+       or remove the finding.
+
+    Do not produce the backlog until A, B, C, and D are all complete with real 
+    content. "PASSED" is not an answer.
+
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 2 — THE MASTER BACKLOG
+═══════════════════════════════════════════════════════════════════════════════
+Categorized, prioritized task list. Every task includes ALL of:
+
+  ID             category-prefixed (ARCH-01, BUG-04, TYPE-02, PERF-01, DX-03, 
+                 TEST-02, SEC-01)
+  Title          one line, action-oriented
+  Severity       P0 = data loss / security / production-broken / architecture 
+                      violation that breaks the project's own promise
+                 P1 = blocks scaling or active feature work
+                 P2 = real debt with measurable cost
+                 P3 = polish
+  Effort         S (<1hr) / M (half day) / L (full day) / XL (multi-day)
+  Evidence       path/to/file.ext:120-185 — specific, no hand-waving
+  Source Audit   which Phase 1 sub-audit surfaced this (1.2A, 1.2B, 1.2C, 1.3, 
+                 1.5, etc.)
+  Why It Matters 2–3 sentences of concrete impact, not vibes
+  Execution Plan 2–4 ordered steps; files to be created / modified / deleted.
+
+Actionable for a downstream executor. You are NOT executing it.
+  Verification   measurable success criteria — NOT "looks cleaner"
+  Risk           what could break: callers, consumers, downstream modules
+  Depends On     other task IDs that must complete first (or "none")
+  Confidence     HIGH (verified from code) / MEDIUM (strong signal, light 
+                 assumption) / NEEDS-VERIFICATION (flag for human review)
+
+CATEGORIES
+  ARCH  Architectural decomposition, layering, coupling, boundary violations
+  BUG   Logic & stability — verifiable from code. Speculation goes in 
+        NEEDS-VERIFICATION, not BUG.
+  TYPE  Type / interface integrity (any-types, unsafe casts, weak contracts)
+  PERF  Performance issues with measurable impact
+  SEC   Security: input validation gaps, secret handling, injection surfaces
+  DX    Developer experience (build, lint, docs, tooling)
+  TEST  Coverage gaps on critical paths
+
+Every COMPLIANCE matrix violation (Pass A, B, or C) should map to at least one 
+task. Every ANTI-PATTERN finding with real impact should map to at least one 
+task. Every "NOT FULFILLED" purpose finding should map to at least one task.
+
+═══════════════════════════════════════════════════════════════════════════════
+FINAL OUTPUT
+═══════════════════════════════════════════════════════════════════════════════
+End the document with these four sections, in order:
+
+  1. SUMMARY TABLE — every task: ID, Title, Severity, Effort, Confidence, 
+     Source Audit, Depends On.
+  2. RECOMMENDED BATCHES — tasks grouped into independently-shippable batches in 
+     execution order. Each batch gets a one-line rationale.
+  3. OPEN QUESTIONS — anything needing human clarification. NEEDS-VERIFICATION 
+     items that could change severity surface here. Items from 1.9.B that are 
+     gaps go here.
+  4. NOT FLAGGED — things you considered and deliberately excluded, one line each. 
+     Include anything you steel-manned in 1.9.D and decided was actually fine.
+
+The codebase remains untouched. Stop there.
+
+Begin Phase 0.
+
