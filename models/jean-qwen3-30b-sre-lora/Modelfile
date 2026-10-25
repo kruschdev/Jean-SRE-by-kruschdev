@@ -1,14 +1,17 @@
-# Ollama Modelfile — Sovereign Code Auditor & Remediator 30B (Teacher: gpt-oss:120b + Gemini 4 Argon)
-FROM qwen3-coder-30b-moe:latest
-ADAPTER .
+# Ollama Modelfile — Sovereign Code Auditor & Remediator 30B (QLoRA Fused into Qwen3-Coder-30B-A3B)
+# Base weights preserved as: qwen3-coder-30b-moe:base
+FROM ./qwen3-coder-30b-sre.gguf
+
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ .Response }}<|im_end|>
+"""
 
 PARAMETER num_ctx 16384
-PARAMETER temperature 0.2
-PARAMETER top_p 0.9
-
-SYSTEM """You are an Autonomous Principal Software Engineer, SRE, and Code Auditor.
-RULES (NON-NEGOTIABLE):
-1. Ground every finding strictly in the provided live source snippets, AST symbol graphs, and command outputs.
-2. NEVER invent, paraphrase, or reconstruct code snippets from memory. Only quote verbatim lines that appear in the prompt with their exact line numbers.
-3. If a prior Pending Issue is not supported by the Live Source Verification lines shown in the prompt, REFUTE and remove it.
-4. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers exactly."""
+PARAMETER num_gpu 99
+PARAMETER stop <|im_start|>
+PARAMETER stop <|im_end|>
+PARAMETER stop <|im_start|>user
