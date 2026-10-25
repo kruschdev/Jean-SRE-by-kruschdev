@@ -3101,7 +3101,7 @@ async function runActiveSweep() {
     console.log("  Jean - Native Local Homelab Agent");
     console.log(`  Thinker: ${THINKER_MODEL} (${thinkerNode} - ${thinkerNodeName})`);
     console.log(`  Workers: ${WORKER_MODEL} (${workerNode} - ${workerNodeName})`);
-    console.log(`  Embeddings: bge-large:latest (${process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434'})`);
+    console.log(`  Embeddings: ${process.env.EMBED_MODEL || 'snowflake-arctic-embed2:latest'} (${process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434'})`);
     console.log("  Mode: Code Optimization + Fleet Infrastructure");
     console.log("  Sentinel: Multi-node SSH (3 nodes, 15 tools)");
     console.log("╚══════════════════════════════════════════════════╝");

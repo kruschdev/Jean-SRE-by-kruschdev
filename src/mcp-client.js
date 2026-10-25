@@ -243,6 +243,8 @@ async function _doInitMcpClients() {
     // 1. Context / Working Memory Server (Tier 1)
     const contextPath = path.resolve(appRoot, '../krusch-context-mcp/src/index.js');
     const defaultDbUrl = process.env.DATABASE_URL || process.env.DBOS_DATABASE_URL || '';
+    const embedHost = process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434';
+    const embedModel = process.env.EMBED_MODEL || 'snowflake-arctic-embed2:latest';
     try {
       await mcpManager.connect(
         'krusch-context', 
@@ -250,11 +252,14 @@ async function _doInitMcpClients() {
         [contextPath],
         { 
           ...(defaultDbUrl ? { DBOS_DATABASE_URL: defaultDbUrl, DATABASE_URL: defaultDbUrl } : {}),
-          OLLAMA_URL: process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434',
-          OLLAMA_NODES: process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434',
+          OLLAMA_URL: embedHost,
+          OLLAMA_EMBED_HOST: embedHost,
+          OLLAMA_NODES: embedHost,
+          EMBED_MODEL: embedModel,
           TAG_MODEL: 'qwen2.5-coder:7b'
         },
-        appRoot
+        appRoot,
+        20000
       );
     } catch (e) {
       console.error(`[MCP] Krusch Context failed to connect: ${e.message}`);
@@ -273,8 +278,10 @@ async function _doInitMcpClients() {
         [gitPath],
         {
           ...(defaultDbUrl ? { DATABASE_URL: defaultDbUrl } : {}),
-          OLLAMA_URL: process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434',
-          OLLAMA_NODES: process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434',
+          OLLAMA_URL: embedHost,
+          OLLAMA_EMBED_HOST: embedHost,
+          OLLAMA_NODES: embedHost,
+          EMBED_MODEL: embedModel,
           PORT: ''
         },
         path.dirname(path.dirname(gitPath))
@@ -333,7 +340,9 @@ async function _doInitMcpClients() {
         ['-m', 'krusch_fs.mcp'],
         {
           PYTHONPATH: [fsSrcPath, nexusSrcPath, libPyPath].join(':'),
-          OLLAMA_URL: process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434',
+          OLLAMA_URL: embedHost,
+          OLLAMA_EMBED_HOST: embedHost,
+          EMBED_MODEL: embedModel,
           PORT: ''
         },
         appRoot
@@ -349,7 +358,12 @@ async function _doInitMcpClients() {
         'krusch-frontend',
         'node',
         [frontendPath],
-        { PORT: '' },
+        {
+          OLLAMA_URL: embedHost,
+          OLLAMA_NODES: embedHost,
+          EMBED_MODEL: embedModel,
+          PORT: ''
+        },
         path.dirname(frontendPath)
       );
     } catch (e) {

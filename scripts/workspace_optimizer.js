@@ -24,7 +24,7 @@ const PROJECTS_DIR = join(HOMELAB_ROOT, 'projects');
 const JEAN_SRE_DIR = join(PROJECTS_DIR, 'jean-sre');
 
 // Curated active pinned models (should NOT be unloaded from VRAM)
-const PINNED_MODELS = ['qwen2.5-coder:7b', 'bge-large', 'qwen2.5-coder:3b', 'spectralquant:latest', 'qwen3-coder-30b-moe:latest'];
+const PINNED_MODELS = ['qwen2.5-coder:7b', 'snowflake-arctic-embed2', 'snowflake-arctic-embed2:latest', 'bge-large', 'qwen2.5-coder:3b', 'spectralquant:latest', 'qwen3-coder-30b-moe:latest', 'gemma4:e4b', 'hermes3:latest'];
 
 // Idle thresholds
 const STALE_THRESHOLD_DAYS = 15;

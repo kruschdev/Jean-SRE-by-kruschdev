@@ -1155,7 +1155,7 @@ if (isMainModule) {
             console.log(`[Config] Persona (Thinker): ${PERSONA_MODEL} @ ${PERSONA_OLLAMA_URL}`);
             console.log(`[Config] Colab G4 Piggyback Candidates: ${COLAB_BURST_URLS.join(', ')} (${COLAB_BURST_MODEL})`);
             console.log(`[Config] Executor (Worker): ${EXECUTOR_MODEL} @ ${EXECUTOR_OLLAMA_URL}`);
-            console.log(`[Config] Embeddings (bge-large): ${process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434'}`);
+            console.log(`[Config] Embeddings (${process.env.EMBED_MODEL || 'snowflake-arctic-embed2:latest'}): ${process.env.OLLAMA_EMBED_HOST || 'http://127.0.0.1:11434'}`);
             try {
                 await initMcpClients();
                 console.log(`MCP clients initialized successfully on startup.`);

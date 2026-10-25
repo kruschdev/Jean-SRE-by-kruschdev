@@ -11,8 +11,8 @@ from src.backend.swarm import get_swarm_jobs, get_swarm_stats, get_jean_swarm_st
 DATABASE_URL = os.getenv("DBOS_DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-OLLAMA_EMBED_HOST = os.getenv("OLLAMA_EMBED_HOST", "http://kruschserv:11434")
-EMBED_MODEL = "bge-large"
+OLLAMA_EMBED_HOST = os.getenv("OLLAMA_EMBED_HOST", "http://127.0.0.1:11434")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "snowflake-arctic-embed2")
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
 
 # Initialize fastMCP
@@ -31,17 +31,58 @@ def get_reranker():
         _reranker = CrossEncoder(RERANKER_MODEL, max_length=512)
     return _reranker
 
-def get_embedding(query: str):
-    """Call Ollama for embedding."""
+def get_embedding(query: str, mode: str = "query", domain: str = "code"):
+    """Call Ollama for embedding with domain-aware query prefixing and legacy 404 fallback."""
+    formatted_input = query
+    if mode == "query":
+        if EMBED_MODEL.startswith("bge-large") and domain != "code":
+            prefix = "Represent this sentence for searching relevant passages: "
+            if not query.startswith(prefix):
+                formatted_input = prefix + query
+        elif EMBED_MODEL.startswith("snowflake-arctic-embed2"):
+            prefix = "query: "
+            if not query.startswith(prefix):
+                formatted_input = prefix + query
+        elif EMBED_MODEL.startswith("qwen3-embedding"):
+            if not query.startswith("Instruct: "):
+                formatted_input = (
+                    "Instruct: Given a technical code or architecture query, retrieve the relevant source code module\nQuery:"
+                    + query
+                )
+
+    payload = {
+        "model": EMBED_MODEL,
+        "input": formatted_input,
+        "truncate": True,
+        "keep_alive": -1,
+    }
+    if EMBED_MODEL.startswith("qwen3-embedding"):
+        payload["dimensions"] = 1024
+
+    base_url = OLLAMA_EMBED_HOST.rstrip("/")
     resp = httpx.post(
-        f"{OLLAMA_EMBED_HOST}/api/embed",
-        json={"model": EMBED_MODEL, "input": query},
+        f"{base_url}/api/embed",
+        json=payload,
         timeout=30.0
     )
+    if resp.status_code == 404:
+        resp = httpx.post(
+            f"{base_url}/api/embeddings",
+            json={
+                "model": EMBED_MODEL,
+                "prompt": formatted_input[:1150],
+                "truncate": True,
+                "keep_alive": -1,
+            },
+            timeout=30.0,
+        )
     resp.raise_for_status()
-    embeddings = resp.json().get("embeddings", [[]])
-    if embeddings and embeddings[0]:
+    data = resp.json()
+    embeddings = data.get("embeddings", [[]])
+    if isinstance(embeddings, list) and embeddings and embeddings[0]:
         return embeddings[0]
+    if isinstance(data.get("embedding"), list) and data["embedding"]:
+        return data["embedding"]
     return None
 
 @mcp.tool()
@@ -203,7 +244,7 @@ def krusch_context_write_state(category: str, content: str, author_id: str = "je
     if category not in valid_cats:
         return json.dumps({"error": f"Invalid category '{category}'. Valid: {valid_cats}"})
 
-    vector = get_embedding(content)
+    vector = get_embedding(content, mode="document")
     if not vector:
         return json.dumps({"error": "Failed to embed content"})
 

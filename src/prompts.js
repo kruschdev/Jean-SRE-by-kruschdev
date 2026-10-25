@@ -4,9 +4,9 @@ export const HOMELAB_CONTEXT = `
 ### Nodes & Multi-Family 5-GPU Residency (keep_alive: -1, 100% GPU)
 | Node | Role | CPU | GPU | RAM | Key Services & Pinned Resident Models |
 |------|------|-----|-----|-----|---------------------------------------|
-| krusch | Central Orchestrator + Dev Station | i7-5820K | RTX 2080 Ti 11GB | 32GB | Director, Companion, Whisper STT, Ollama (bge-large:latest + qwen2.5-coder:7b pinned keep_alive: -1) |
+| krusch | Central Orchestrator + Dev Station | i7-5820K | RTX 2080 Ti 11GB | 32GB | Director, Companion, Whisper STT, Ollama (snowflake-arctic-embed2:latest + qwen2.5-coder:7b pinned keep_alive: -1) |
 | kruschdev | Heavy Compute + Swarm Worker | Xeon E5-2698 v4 20C/40T | Dual RTX 2080 Ti 22GB (NVLink) | 64GB ECC | Jean SRE, Ollama (qwen3-coder-30b-moe:latest ~19.6GB pinned keep_alive: -1 for Jean PERSONA_MODEL) |
-| kruschserv | Production Host + Vector DB | Xeon 20C/40T | Dual RTX 3060 24GB | 80GB | Pocket Lawyer, kruschdb (PG Vector), DBOS Server, Ollama (gemma4:e4b + hermes3:latest pinned keep_alive: -1) |
+| kruschserv | Production Host + Vector DB | Xeon 20C/40T | Dual RTX 3060 24GB | 80GB | Pocket Lawyer, kruschdb (PG Vector), DBOS Server, Ollama (gemma4:e4b + hermes3:latest + snowflake-arctic-embed2:latest pinned keep_alive: -1) |
 | kruschgame | Standby Sandbox Laptop | i5-11400H 6C/12T | RTX 3050 4GB | 32GB | Standby Emulation / Sandbox (frequently powered off) |
 | kruschmedia | Dedicated Media + Backups | i7-4790S 4C/8T | AMD RX 5500 8GB | 32GB | Jellyfin, Media Storage, Backups |
 
@@ -278,7 +278,7 @@ Look for: rotated logs not cleaned up, duplicate model/archive blobs across moun
         case 'services':
             return `**Goal**: Find service optimization — failed units, unnecessary services, GPU VRAM health, and agent self-state security.
 Services that are enabled but broken, or running but unused, waste resources silently.
-Note: Under the Multi-Family 5-GPU Policy, Ollama models (\`qwen3-coder-30b-moe:latest\` ~19.6GB on \`kruschdev\`, \`gemma4:e4b\` + \`hermes3:latest\` on \`kruschserv\`, \`bge-large:latest\` + \`qwen2.5-coder:7b\` on \`krusch\`) are intentionally pinned in VRAM via native \`keep_alive: -1\` (replaces the retired \`keep_hot.js\` script). Do NOT flag pinned resident Ollama models or the absence of \`keep_hot.js\` as an anomaly.
+Note: Under the Multi-Family 5-GPU Policy, Ollama models (\`qwen3-coder-30b-moe:latest\` ~19.6GB on \`kruschdev\`, \`gemma4:e4b\` + \`hermes3:latest\` + \`snowflake-arctic-embed2:latest\` on \`kruschserv\`, \`snowflake-arctic-embed2:latest\` + \`qwen2.5-coder:7b\` on \`krusch\`) are intentionally pinned in VRAM via native \`keep_alive: -1\` (replaces the retired \`keep_hot.js\` script). Do NOT flag pinned resident Ollama models or the absence of \`keep_hot.js\` as an anomaly.
 
 1. sentinel: list_systemd_services({ node: '${node}' }) — find failed or dead services
 2. sentinel: get_gpu_stats({ node: '${node}' }) — live GPU VRAM utilization, temperature, and loaded models via nvidia-smi
