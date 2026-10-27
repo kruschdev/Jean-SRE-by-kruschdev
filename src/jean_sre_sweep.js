@@ -822,25 +822,132 @@ async function saveLesson(lessonContent, targetProject = 'jean-sre') {
     console.log(`[Lessons] Saved to kruschdb (${cleanProject}): ${result.slice(0, 150)}`);
 }
 
+const AUDIT_BLOCKER_TAG_RE = /^\[([A-Z]{2,8}-\d{1,3})\s*\|\s*(P[0-3])\]\s*(.+)$/;
+
+function formatAuditBlockerSummary(card) {
+    return `[${card.id} | ${card.severity}] ${card.title} (${card.evidence})${card.fixSummary ? ` — ${card.fixSummary}` : ''}`;
+}
+
+function normalizeAuditBlockerBody(content, targetProject = 'jean-sre') {
+    const cleanProject = String(targetProject || 'jean-sre').split('/')[0];
+    let body = String(content || '').trim();
+    const prefix = `[${cleanProject}]`;
+    if (body.toLowerCase().startsWith(prefix.toLowerCase())) {
+        body = body.slice(prefix.length).trim();
+    }
+    return body.replace(/\s+/g, ' ');
+}
+
+function isOwnedAuditBlocker(rawContent, cleanProject, storeName) {
+    const trimmed = String(rawContent || '').trim();
+    const prefix = `[${cleanProject}]`;
+    if (cleanProject === 'jean-sre') {
+        const rest = trimmed.toLowerCase().startsWith('[jean-sre]')
+            ? trimmed.slice('[jean-sre]'.length).trim()
+            : trimmed;
+        return AUDIT_BLOCKER_TAG_RE.test(rest);
+    }
+    if (storeName === 'jean-sre') {
+        if (!trimmed.toLowerCase().startsWith(prefix.toLowerCase())) return false;
+        const rest = trimmed.slice(prefix.length).trim();
+        return AUDIT_BLOCKER_TAG_RE.test(rest);
+    }
+    if (trimmed.toLowerCase().startsWith(prefix.toLowerCase())) {
+        const rest = trimmed.slice(prefix.length).trim();
+        return AUDIT_BLOCKER_TAG_RE.test(rest);
+    }
+    return AUDIT_BLOCKER_TAG_RE.test(trimmed);
+}
+
+/**
+ * Reconcile prior auto-generated `[ID | P0-P3]` audit blockers for `targetProject`
+ * in both the project's local `.agent/context.db` and the central `jean-sre` store.
+ * Preserves human-authored blockers and other projects' blockers.
+ */
+async function reconcileProjectBlockers(targetProject, activeBugCards = [], callToolFn = callTool) {
+    const cleanProject = String(targetProject || 'jean-sre').split('/')[0];
+    const desiredBodies = new Set(
+        (activeBugCards || []).map(card => normalizeAuditBlockerBody(formatAuditBlockerSummary(card), cleanProject))
+    );
+    const stores = cleanProject && cleanProject !== 'jean-sre'
+        ? [cleanProject, 'jean-sre']
+        : ['jean-sre'];
+    const activeByStore = new Map(stores.map(s => [s, new Set()]));
+    let invalidatedCount = 0;
+
+    for (const storeName of stores) {
+        let rawList = '';
+        try {
+            rawList = await callToolFn('krusch-context-krusch-context-list-memories', {
+                category: 'blocker',
+                project: storeName,
+                limit: storeName === 'jean-sre' ? 1000 : 200
+            }, { retries: 1, timeout: 10000 });
+        } catch {
+            continue;
+        }
+        const text = String(rawList || '');
+        const lineRe = /^\*\s*\*\*#(\d+)\*\*\s*\[blocker\]\s*\(ACTIVE\):\s*(.+)$/gm;
+        let m;
+        while ((m = lineRe.exec(text)) !== null) {
+            const id = Number(m[1]);
+            const content = m[2].trim();
+            if (!Number.isFinite(id) || !isOwnedAuditBlocker(content, cleanProject, storeName)) continue;
+
+            const normBody = normalizeAuditBlockerBody(content, cleanProject);
+            const storeActive = activeByStore.get(storeName);
+            if (desiredBodies.has(normBody) && !storeActive.has(normBody)) {
+                storeActive.add(normBody);
+                continue;
+            }
+
+            const reason = desiredBodies.size === 0
+                ? `Auto-invalidated by Jean SRE 2_MASTER_BACKLOG: ${targetProject} achieved CLEAN_PASS (zero verified actionable P0/P1 blockers).`
+                : (desiredBodies.has(normBody)
+                    ? `Auto-invalidated duplicate active audit blocker for ${targetProject} during 2_MASTER_BACKLOG reconciliation.`
+                    : `Auto-invalidated superseded/resolved audit blocker for ${targetProject}; not present in latest verified 2_MASTER_BACKLOG.`);
+            try {
+                await callToolFn('krusch_context_revise', {
+                    action: 'invalidate',
+                    target_id: id,
+                    project: storeName,
+                    reason
+                }, { retries: 1, timeout: 10000 });
+                invalidatedCount++;
+            } catch (e) {
+                console.warn(`[Blockers] Failed to invalidate stale blocker #${id} in ${storeName}:`, e.message);
+            }
+        }
+    }
+
+    if (invalidatedCount > 0) {
+        console.log(`[Blockers] 🧹 Reconciled & invalidated ${invalidatedCount} stale/duplicate audit blocker(s) for ${cleanProject}.`);
+    }
+    return { invalidatedCount, activeByStore };
+}
+
 /** Save a P0/P1 blocker discovered during Master Backlog synthesis to kruschdb (Tier 1 /code-audit step). */
-async function saveProjectBlocker(blockerContent, targetProject) {
+async function saveProjectBlocker(blockerContent, targetProject, { skipStores = new Set(), callToolFn = callTool } = {}) {
     const cleanProject = String(targetProject || 'jean-sre').split('/')[0];
     const prefixedContent = cleanProject !== 'jean-sre' ? `[${cleanProject}] ${blockerContent}` : blockerContent;
-    const result = await callTool('krusch_context_remember', {
-        category: 'blocker',
-        content: prefixedContent,
-        project: 'jean-sre',
-        force: true
-    });
-    if (cleanProject && cleanProject !== 'jean-sre') {
-        await callTool('krusch_context_remember', {
+    let result = '[Skipped — already active]';
+    if (!skipStores.has('jean-sre')) {
+        result = await callToolFn('krusch_context_remember', {
+            category: 'blocker',
+            content: prefixedContent,
+            project: 'jean-sre',
+            force: true
+        });
+    }
+    if (cleanProject && cleanProject !== 'jean-sre' && !skipStores.has(cleanProject)) {
+        await callToolFn('krusch_context_remember', {
             category: 'blocker',
             content: prefixedContent,
             project: cleanProject,
             force: true
         }).catch(() => {});
     }
-    console.log(`[Blockers] Saved P0/P1 blocker to kruschdb (${cleanProject}): ${result.slice(0, 150)}`);
+    console.log(`[Blockers] Saved P0/P1 blocker to kruschdb (${cleanProject}): ${String(result).slice(0, 150)}`);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1947,10 +2054,17 @@ function ensureHostWritable(targetPath) {
     } catch {}
 }
 
-async function persistInflight(reply, cycle, targetProject = null) {
+async function persistInflight(reply, cycle, targetProject = null, { phase = null } = {}) {
     const match = reply.match(/### JEAN_INFLIGHT([\s\S]*)/);
     if (match?.[1]) {
-        const content = `# 🚀 Jean SRE In-Flight State\n*Last Updated: ${new Date().toISOString()} (Cycle ${cycle})*\n\n${match[1].trim()}`;
+        let inflightBody = match[1].trim();
+        if (phase === '2_MASTER_BACKLOG' && isCleanPassBacklog(reply)) {
+            inflightBody = inflightBody.replace(
+                /(-\s*\*\*Pending Issues:?\*\*)[\s\S]*?(?=\n-\s*\*\*[A-Z]|\n---|$)/i,
+                '$1 None — CLEAN_PASS verified in 2_MASTER_BACKLOG.'
+            );
+        }
+        const content = `# 🚀 Jean SRE In-Flight State\n*Last Updated: ${new Date().toISOString()} (Cycle ${cycle})*\n\n${inflightBody}`;
         await fs.promises.writeFile('JEAN_SRE_INFLIGHT.md', content);
         ensureHostWritable('JEAN_SRE_INFLIGHT.md');
         if (targetProject) {
@@ -2554,7 +2668,9 @@ function distillTeacherKnowledgeForStudent(projectPath, { teacherModel = 'gpt-os
         title: c.title,
         fixSummary: (c.fixSummary || '').slice(0, 140)
     }));
-    const cards = parsedCards.length > 0 ? parsedCards : (Array.isArray(existing.verifiedBacklog) ? existing.verifiedBacklog : []);
+    const cards = parsedCards.length > 0
+        ? parsedCards
+        : (isCleanPassBacklog(mb) ? [] : (Array.isArray(existing.verifiedBacklog) ? existing.verifiedBacklog : []));
 
     // 4. Extract high-yield novel L2 tool trajectories
     const toolSet = new Set([
@@ -2705,33 +2821,132 @@ function buildProjectAuditContext(projectPath, phase, inflightBlock = '', option
     return sections.join('\n\n');
 }
 
-/**
- * Parse task cards from a Master Backlog markdown document.
- * Handles both `#### BUG-01` card blocks and markdown summary tables.
- */
-function parseMasterBacklogCards(backlogText) {
-    const cards = new Map();
+function extractLastSummaryTableSection(backlogText) {
+    const text = String(backlogText || '');
+    const re = /(?:^|\n)###\s*1\.\s*SUMMARY\s*TABLE\b([\s\S]*?)(?=\n###\s+|\n##\s+|$)/gi;
+    let lastBody = null;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+        lastBody = m[1] || '';
+    }
+    return lastBody;
+}
+
+function stripNonDefectBacklogSections(backlogText) {
+    return String(backlogText || '').replace(
+        /(?:^|\n)###\s*(?:4\.\s*NOT\s+FLAGGED|NOT\s+FLAGGED|5\.\s*STALENESS[^\n]*|STALENESS\s*&\s*ARCHIVAL\s*VERDICT|LESSON\b[^\n]*|JEAN_INFLIGHT\b[^\n]*)([\s\S]*?)(?=\n###\s+|\n##\s+|\n---|$)/gi,
+        '\n'
+    );
+}
+
+function isCleanPassBacklog(backlogText) {
+    const summarySection = extractLastSummaryTableSection(backlogText);
+    if (summarySection === null) return false;
+    const rowRegex = /\|\s*[*`[]*([A-Z]{2,8}-\d{1,3})[\]*`]*\s*\|\s*([^|]+)\|\s*[*`]*?(P[0-3])[*`]*\s*\|\s*[*`]*([SMLX]{1,2})[*`]*\s*\|/i;
+    if (rowRegex.test(summarySection)) return false;
+    return /\|\s*[*`]*CLEAN_PASS[*`]*\s*\|/i.test(summarySection)
+        || /\|\s*[*`]*NONE[*`]*\s*\|/i.test(summarySection)
+        || /\b(?:zero|no)\s+actionable\s+defects\b/i.test(summarySection);
+}
+
+function extractStaleCleanupCards(backlogText) {
+    const staleMap = new Map();
     const text = String(backlogText || '');
     let m;
-
-    // 1. Seed from summary table rows `| BUG-01 | Title | P1 | M | ... |` so Effort/Severity are captured even if omitted in prose cards
-    const rowRegex = /\|\s*([A-Z]{2,8}-\d{1,3})\s*\|\s*([^|]+)\|\s*(P[0-3])\s*\|\s*([SMLX]{1,2})\s*\|/gi;
+    const rowRegex = /\|\s*[*`[]*(STALE-\d{1,3})[\]*`]*\s*\|\s*([^|]+)\|\s*[*`]*?(P[0-3])[*`]*\s*\|\s*[*`]*([SMLX]{1,2})[*`]*\s*\|/gi;
     while ((m = rowRegex.exec(text)) !== null) {
         const id = m[1].trim().toUpperCase();
-        cards.set(id, {
+        staleMap.set(id, {
             id,
-            title: m[2].trim(),
+            title: m[2].replace(/^\*\*|\*\*$/g, '').trim(),
             severity: m[3].trim().toUpperCase(),
             effort: m[4].trim().toUpperCase(),
             evidence: 'project-wide',
             fixSummary: ''
         });
     }
+    const headingRegex = /(?:^|\n)#{3,4}[ \t]+\[?(STALE-\d{1,3})\]?(?:[: \t—-]+([^\n]*))?([\s\S]*?)(?=(?:\n#{2,4}[ \t]+)|$)/gi;
+    while ((m = headingRegex.exec(text)) !== null) {
+        const id = m[1].trim().toUpperCase();
+        const existing = staleMap.get(id) || {};
+        const headingTitle = (m[2] || '').trim();
+        const body = m[3] || '';
+        const titleMatch = body.match(/\*\*Title:?\*\*\s*([^\n]+)/i);
+        const sevMatch = body.match(/\*\*Severity:?\*\*\s*(P[0-3])/i);
+        const effMatch = body.match(/\*\*Effort:?\*\*\s*([SMLX]{1,2})/i);
+        const evMatch = body.match(/\*\*(?:Evidence|File):?\*\*\s*`?([^`\n]+)`?/i);
+        const fixMatch = body.match(/\*\*(?:Fix Instructions|Fix|Execution Plan|Why It Matters):?\*\*\s*([\s\S]*?)(?=\n[-*]*\s*\*\*[A-Z]|\n---|$)/i);
+        staleMap.set(id, {
+            id,
+            title: (titleMatch ? titleMatch[1] : (headingTitle || existing.title || id)).replace(/^\*\*|\*\*$/g, '').trim() || id,
+            severity: (sevMatch ? sevMatch[1] : (existing.severity || 'P2')).toUpperCase(),
+            effort: (effMatch ? effMatch[1] : (existing.effort || 'S')).toUpperCase(),
+            evidence: (evMatch ? evMatch[1] : (existing.evidence || 'project-wide')).trim(),
+            fixSummary: fixMatch
+                ? fixMatch[1].trim().split('\n').map(l => l.trim().replace(/^[-*]\s*/, '')).filter(Boolean).slice(0, 2).join('; ')
+                : (existing.fixSummary || '')
+        });
+    }
+    return [...staleMap.values()];
+}
+
+/**
+ * Parse task cards from a Master Backlog markdown document.
+ * Honors Referee `### 1. SUMMARY TABLE` verdicts (`CLEAN_PASS` and verified ID allowlist)
+ * while preserving full backward-compatibility for prose/table backlogs without Section 1.
+ */
+function parseMasterBacklogCards(backlogText) {
+    const cards = new Map();
+    const rawText = String(backlogText || '');
+    const summarySection = extractLastSummaryTableSection(rawText);
+    const scanText = stripNonDefectBacklogSections(rawText);
+    const rowRegex = /\|\s*[*`[]*([A-Z]{2,8}-\d{1,3})[\]*`]*\s*\|\s*([^|]+)\|\s*[*`]*?(P[0-3])[*`]*\s*\|\s*[*`]*([SMLX]{1,2})[*`]*\s*\|/gi;
+    let allowedIds = null;
+    let m;
+
+    // 1. Seed from Referee `### 1. SUMMARY TABLE` when present; otherwise seed from any summary table rows
+    if (summarySection !== null) {
+        const summaryIds = new Set();
+        while ((m = rowRegex.exec(summarySection)) !== null) {
+            const id = m[1].trim().toUpperCase();
+            if (id.startsWith('STALE-')) continue;
+            summaryIds.add(id);
+            cards.set(id, {
+                id,
+                title: m[2].replace(/^\*\*|\*\*$/g, '').trim(),
+                severity: m[3].trim().toUpperCase(),
+                effort: m[4].trim().toUpperCase(),
+                evidence: 'project-wide',
+                fixSummary: ''
+            });
+        }
+        if (summaryIds.size === 0 && isCleanPassBacklog(rawText)) {
+            return [];
+        }
+        if (summaryIds.size > 0) {
+            allowedIds = summaryIds;
+        }
+    } else {
+        while ((m = rowRegex.exec(scanText)) !== null) {
+            const id = m[1].trim().toUpperCase();
+            if (id.startsWith('STALE-')) continue;
+            cards.set(id, {
+                id,
+                title: m[2].replace(/^\*\*|\*\*$/g, '').trim(),
+                severity: m[3].trim().toUpperCase(),
+                effort: m[4].trim().toUpperCase(),
+                evidence: 'project-wide',
+                fixSummary: ''
+            });
+        }
+    }
 
     // 2. Parse card blocks starting with ###/#### [ID] and enrich/override seeded table entries
     const cardHeadingRegex = /(?:^|\n)#{3,4}[ \t]+\[?([A-Z]{2,8}-\d{1,3})\]?(?:[: \t—-]+([^\n]*))?([\s\S]*?)(?=(?:\n#{2,4}[ \t]+)|$)/g;
-    while ((m = cardHeadingRegex.exec(text)) !== null) {
+    while ((m = cardHeadingRegex.exec(scanText)) !== null) {
         const id = m[1].trim().toUpperCase();
+        if (id.startsWith('STALE-')) continue;
+        if (allowedIds && !allowedIds.has(id)) continue;
         const existing = cards.get(id) || {};
         const headingTitle = (m[2] || '').trim();
         const body = m[3] || '';
@@ -2755,10 +2970,10 @@ function parseMasterBacklogCards(backlogText) {
     }
 
     // 3. Fallback: parse file-anchored bullet items `- **path/to/file.ext:line** - Title` with `*Severity*: P0-P3` and `*Fix*: ...`
-    if (cards.size === 0) {
+    if (cards.size === 0 && !allowedIds) {
         const bulletRegex = /(?:^|\n)-\s+\*\*`?([a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+(?::\d+(?:-\d+)?)?)`?\*\*\s*[-—:]\s*([^\n]+)((?:\n\s+-[^\n]+)*)/g;
         let idx = 1;
-        while ((m = bulletRegex.exec(text)) !== null) {
+        while ((m = bulletRegex.exec(scanText)) !== null) {
             const evidence = m[1].trim();
             const rawTitle = m[2].trim();
             const subBullets = m[3] || '';
@@ -2786,11 +3001,11 @@ function parseMasterBacklogCards(backlogText) {
 
 /**
  * Generate `.agent/audit/task.md` in the exact `/audit-fix` checkbox format,
- * and persist P0/P1 blockers to kruschdb (`krusch-context-mcp`).
+ * reconcile stale/resolved audit blockers, and persist active P0/P1 blockers to `krusch-context-mcp`.
  */
-async function finalizeMasterBacklogArtifacts(targetProject, auditDir, reply) {
+async function finalizeMasterBacklogArtifacts(targetProject, auditDir, reply, { callToolFn = callTool } = {}) {
     const cards = parseMasterBacklogCards(reply);
-    const staleCards = cards.filter(c => c.id.startsWith('STALE-'));
+    const staleCards = extractStaleCleanupCards(reply);
     const verdictMatch = String(reply || '').match(/###\s*5\.\s*STALENESS\s*&\s*ARCHIVAL\s*VERDICT([\s\S]*?)(?=\n###\s+(?:LESSON|JEAN_INFLIGHT)|$)/i);
 
     if (staleCards.length > 0 || verdictMatch?.[1]) {
@@ -2821,16 +3036,18 @@ async function finalizeMasterBacklogArtifacts(targetProject, auditDir, reply) {
         }
     }
 
-    if (cards.length === 0) return;
-
     const formatItem = (c) => {
         const line = `- [ ] **[${c.id}] ${c.title}** (${c.severity} / Effort: ${c.effort}) — \`${c.evidence}\``;
         return c.fixSummary ? `${line}\n  - Fix: ${c.fixSummary.slice(0, 220)}` : line;
     };
 
+    const headerBanner = cards.length === 0
+        ? `> **Status:** ✅ \`CLEAN_PASS\` — Zero actionable defects verified (${new Date().toISOString()}).`
+        : `> Auto-generated by Jean SRE from \`master_backlog.md\` for the \`/audit-fix\` and \`/loop\` workflows.`;
+
     const taskMd = [
         `# Audit Fix Tasks — ${targetProject}`,
-        `> Auto-generated by Jean SRE from \`master_backlog.md\` for the \`/audit-fix\` and \`/loop\` workflows.`,
+        headerBanner,
         ``,
         `## 🔴 Bugs & Critical (P0 / P1 — must fix)`,
         bugs.length > 0 ? bugs.map(formatItem).join('\n') : `- *(No P0/P1 critical bugs flagged)*`,
@@ -2848,11 +3065,25 @@ async function finalizeMasterBacklogArtifacts(targetProject, auditDir, reply) {
     ensureHostWritable(taskPath);
     console.log(`[Audit] ✅ Generated /audit-fix checklist (${cards.length} tasks) at ${taskPath}`);
 
-    // Tier 1 /code-audit requirement: Persist P0/P1 blockers to episodic memory
-    for (const b of bugs.slice(0, 6)) {
+    const topBugs = bugs.slice(0, 6);
+    let activeByStore = new Map();
+    try {
+        const rec = await reconcileProjectBlockers(targetProject, topBugs, callToolFn);
+        activeByStore = rec.activeByStore;
+    } catch (e) {
+        console.warn(`[Blockers] Failed to reconcile prior blockers for ${targetProject}:`, e.message);
+    }
+
+    // Tier 1 /code-audit requirement: Persist active P0/P1 blockers to episodic memory (deduplicated)
+    for (const b of topBugs) {
         try {
-            const blockerSummary = `[${b.id} | ${b.severity}] ${b.title} (${b.evidence})${b.fixSummary ? ` — ${b.fixSummary}` : ''}`;
-            await saveProjectBlocker(blockerSummary, targetProject);
+            const blockerSummary = formatAuditBlockerSummary(b);
+            const norm = normalizeAuditBlockerBody(blockerSummary, targetProject);
+            const skipStores = new Set();
+            for (const [storeName, storeSet] of activeByStore.entries()) {
+                if (storeSet.has(norm)) skipStores.add(storeName);
+            }
+            await saveProjectBlocker(blockerSummary, targetProject, { skipStores, callToolFn });
         } catch (e) {
             console.warn(`[Blockers] Failed to persist blocker ${b.id}:`, e.message);
         }
@@ -3692,8 +3923,8 @@ function getPhaseScopedChecklist(fullText, phase) {
                 extraToolCommands: dispatched.map(d => d.command).filter(Boolean)
             });
 
-            // Persist from the implementer's output (it has the final JEAN_INFLIGHT)
-            await persistInflight(implementerReply, cycle, targetProject);
+            // Persist from the finalized checkpoint output (clears stale Pending Issues on CLEAN_PASS)
+            await persistInflight(finalCheckpointText, cycle, targetProject, { phase });
             await extractAndSaveLessons(implementerReply, targetProject);
             await logCycle(cycle, 'IMPLEMENT', implementerPrompt, implementerReply);
             } // end normal code audit branch
@@ -3774,6 +4005,10 @@ export {
     classifyIntentRisk,
     checkIntentDrift,
     parseMasterBacklogCards,
+    isCleanPassBacklog,
+    extractStaleCleanupCards,
+    finalizeMasterBacklogArtifacts,
+    reconcileProjectBlockers,
     buildPendingIssueCodeEvidence,
     buildProjectAstIndex,
     buildProjectSpecAndDocsBrief,

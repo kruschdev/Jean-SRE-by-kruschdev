@@ -1,10 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
     parseExecutableAction,
     classifyIntentRisk,
     checkIntentDrift,
     parseMasterBacklogCards,
+    isCleanPassBacklog,
+    extractStaleCleanupCards,
+    finalizeMasterBacklogArtifacts,
+    reconcileProjectBlockers,
     buildProjectAstIndex,
     buildProjectSpecAndDocsBrief,
     loadHomelabBaselineRules,
@@ -172,6 +179,136 @@ test('Sweep Unit Tests - parseMasterBacklogCards', async (t) => {
         assert.equal(cards[0].severity, 'P1');
         assert.equal(cards[0].effort, 'S');
         assert.equal(cards[1].id, 'SEC-01');
+    });
+
+    await t.test('honors Referee Summary Table CLEAN_PASS despite Phase 1/2 recap headings and extracts STALE-* separately', () => {
+        const cleanPassWithRecap = `
+### MASTER BACKLOG: home-ai
+
+#### BUG-01: Add defensive error handling to client API helper
+- **Severity:** P1
+- **Effort:** S
+- **Evidence:** \`client/js/app.js:20-37\`
+- **Fix Instructions:** Already verified in live source.
+
+#### STALE-01: Remove unused ingestion scripts
+- **Severity:** P2
+- **Effort:** S
+- **Evidence:** \`scripts/ingest-old.js:1\`
+- **Fix Instructions:** Confirm unused and archive.
+
+### 1. SUMMARY TABLE
+
+| ID | Title | Severity | Effort | Confidence | Source Audit |
+|----|-------|----------|--------|------------|--------------|
+| **CLEAN_PASS** | Zero actionable defects verified | — | — | — | — |
+
+### 4. NOT FLAGGED
+
+- **[BUG-01 | P1] Add defensive error handling** (\`client/js/app.js:20-37\`) — Confirmed in test suite.
+`;
+        assert.equal(isCleanPassBacklog(cleanPassWithRecap), true);
+        assert.deepEqual(parseMasterBacklogCards(cleanPassWithRecap), []);
+        const stale = extractStaleCleanupCards(cleanPassWithRecap);
+        assert.equal(stale.length, 1);
+        assert.equal(stale[0].id, 'STALE-01');
+    });
+
+    await t.test('restricts parsed cards to bolded IDs approved in ### 1. SUMMARY TABLE', () => {
+        const refereeFiltered = `
+#### BUG-01: Real stream cancellation bug
+- **Severity:** P1
+- **Effort:** S
+- **Evidence:** \`src/cascade.ts:1743\`
+- **Fix Instructions:** Re-throw cancellation error.
+
+#### BUG-02: Rejected recap card not in summary table
+- **Severity:** P1
+- **Effort:** M
+- **Evidence:** \`src/cascade.ts:376\`
+- **Fix Instructions:** Should be ignored because Referee omitted it from Summary Table.
+
+### 1. SUMMARY TABLE
+
+| ID | Title | Severity | Effort | Confidence | Source Audit |
+|----|-------|----------|--------|------------|--------------|
+| **BUG-01** | Real stream cancellation bug | P1 | S | High | 1.5 |
+`;
+        assert.equal(isCleanPassBacklog(refereeFiltered), false);
+        const cards = parseMasterBacklogCards(refereeFiltered);
+        assert.equal(cards.length, 1);
+        assert.equal(cards[0].id, 'BUG-01');
+        assert.equal(cards[0].evidence, 'src/cascade.ts:1743');
+    });
+
+    await t.test('finalizeMasterBacklogArtifacts overwrites stale task.md on CLEAN_PASS and reconcileProjectBlockers invalidates only owned stale audit blockers', async () => {
+        const tmpAuditDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jean-audit-test-'));
+        const taskPath = path.join(tmpAuditDir, 'task.md');
+        fs.writeFileSync(taskPath, '# Stale Tasks\n- [ ] **[BUG-99] Old bug** (P1 / Effort: S)\n', 'utf8');
+
+        const toolCalls = [];
+        const mockCallTool = async (toolName, args) => {
+            toolCalls.push({ toolName, args });
+            if (toolName === 'krusch-context-krusch-context-list-memories') {
+                if (args.project === 'unit-test-proj') {
+                    return [
+                        '=== 📋 Memory List (3 records) ===',
+                        '* **#101** [blocker] (ACTIVE): [unit-test-proj] [BUG-99 | P1] Old resolved bug (src/old.js:10)',
+                        '* **#102** [blocker] (ACTIVE): Human note: waiting on upstream vendor API key',
+                        '* **#103** [blocker] (INVALIDATED): [unit-test-proj] [BUG-00 | P1] Already invalidated'
+                    ].join('\n');
+                }
+                if (args.project === 'jean-sre') {
+                    return [
+                        '=== 📋 Memory List (3 records) ===',
+                        '* **#501** [blocker] (ACTIVE): [unit-test-proj] [BUG-99 | P1] Old resolved bug (src/old.js:10)',
+                        '* **#502** [blocker] (ACTIVE): [other-project] [SEC-01 | P0] Unrelated project blocker (src/auth.js:1)',
+                        '* **#503** [blocker] (ACTIVE): [BUG-07 | P1] Jean SRE internal blocker (src/harness.js:12)'
+                    ].join('\n');
+                }
+            }
+            return 'ok';
+        };
+
+        try {
+            const cleanPassReply = `
+### 1. SUMMARY TABLE
+
+| ID | Title | Severity | Effort | Confidence | Source Audit |
+|----|-------|----------|--------|------------|--------------|
+| **CLEAN_PASS** | Zero actionable defects verified | — | — | — | — |
+`;
+            await finalizeMasterBacklogArtifacts('unit-test-proj', tmpAuditDir, cleanPassReply, { callToolFn: mockCallTool });
+            const updatedTaskMd = fs.readFileSync(taskPath, 'utf8');
+            assert.match(updatedTaskMd, /CLEAN_PASS/);
+            assert.doesNotMatch(updatedTaskMd, /BUG-99/);
+
+            const revocations = toolCalls.filter(c => c.toolName === 'krusch_context_revise');
+            assert.deepEqual(
+                revocations.map(r => ({ id: r.args.target_id, project: r.args.project })),
+                [
+                    { id: 101, project: 'unit-test-proj' },
+                    { id: 501, project: 'jean-sre' }
+                ]
+            );
+
+            // Also verify jean-sre self-reconciliation does not touch [other-project] blockers
+            const selfCalls = [];
+            await reconcileProjectBlockers('jean-sre', [], async (toolName, args) => {
+                selfCalls.push({ toolName, args });
+                if (toolName === 'krusch-context-krusch-context-list-memories') {
+                    return [
+                        '* **#502** [blocker] (ACTIVE): [other-project] [SEC-01 | P0] Unrelated project blocker (src/auth.js:1)',
+                        '* **#503** [blocker] (ACTIVE): [BUG-07 | P1] Jean SRE internal blocker (src/harness.js:12)'
+                    ].join('\n');
+                }
+                return 'ok';
+            });
+            const selfRevocations = selfCalls.filter(c => c.toolName === 'krusch_context_revise');
+            assert.deepEqual(selfRevocations.map(r => r.args.target_id), [503]);
+        } finally {
+            fs.rmSync(tmpAuditDir, { recursive: true, force: true });
+        }
     });
 });
 
