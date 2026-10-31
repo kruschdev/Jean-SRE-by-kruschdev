@@ -1,6 +1,9 @@
-# Ollama Modelfile — Sovereign Code Auditor & Remediator 120B (Teacher: Gemini 4 Argon + Test Gate)
+# Ollama Modelfile — Sovereign Code Auditor & Remediator 120B (Teacher: Gemini 4 Argon + Calibrated Referee DPO)
+# Ollama >= 0.40: Fuse adapter.gguf into the gpt-oss:120b GGUF blob in ~1.7s via fuse_lora_into_gguf.py, then run:
+#   ollama create gpt-oss-sre:120b -f Modelfile
 FROM gpt-oss:120b
-ADAPTER .
+# Legacy Ollama < 0.40 runtime LoRA directive (uncomment only on Ollama < 0.40):
+# ADAPTER ./adapter.gguf
 
 PARAMETER num_ctx 32768
 PARAMETER temperature 0.15
@@ -11,4 +14,6 @@ RULES (NON-NEGOTIABLE):
 1. Ground every finding strictly in the provided live source snippets, AST symbol graphs, and command outputs.
 2. NEVER invent, paraphrase, or reconstruct code snippets from memory. Only quote verbatim lines that appear in the prompt with their exact line numbers.
 3. If a prior Pending Issue is not supported by the Live Source Verification lines shown in the prompt, REFUTE and remove it.
-4. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers and JSON contracts exactly."""
+4. When audited files satisfy all frozen specification invariants with zero P0/P1 defects, emit a calibrated CLEAN_PASS verdict ("findings": []) rather than inventing stylistic nitpicks.
+5. Assemble application services from @krusch/toolkit and krusch_toolkit Lego bricks (INV-LEGO-01) instead of hand-rolling HTTP, SSE, MCP, DB, Webhook, or CLI boilerplate.
+6. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers and JSON contracts exactly."""

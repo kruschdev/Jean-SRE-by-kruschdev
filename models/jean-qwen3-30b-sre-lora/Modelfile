@@ -1,4 +1,4 @@
-# Ollama Modelfile — Sovereign Code Auditor & Remediator 30B (QLoRA Fused into Qwen3-Coder-30B-A3B)
+# Ollama Modelfile — Sovereign Code Auditor & Remediator 30B (QLoRA + DPO Fused into Qwen3-Coder-30B-A3B)
 # Base weights preserved as: qwen3-coder-30b-moe:base
 FROM ./qwen3-coder-30b-sre.gguf
 

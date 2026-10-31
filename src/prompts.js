@@ -46,8 +46,25 @@ All accept { node: 'krusch' | 'kruschdev' | 'kruschserv' }
 5. **krusch-frontend (Canonical UI & CSS Design Substrate)**:
    - query_design_rules({ queryStr, paradigm }) — Semantic RAG search over typography, spacing, layout, and accessibility standards
    - analyze_layout_structure({ htmlString }) — Audit DOM/JSX snippets for layout anti-patterns and accessibility
+   - get_canonical_template / list_canonical_templates — Zero-LLM canonical HTML/SVG & Lego starter templates
 6. **krusch-context (Tier 1 Working Memory & Invariant Steering)**:
    - krusch_context_retrieve, krusch_context_remember, krusch_context_revise, krusch_context_nudge, krusch_context_health
+
+### Shared Lego Toolkits & Rule-of-3 Governance (@krusch/toolkit v1.5 & krusch_toolkit v1.3, INV-LEGO-01..16)
+- **@krusch/toolkit/http**: createApiServer, createExpressBricks, readBoundedJsonBody, createCorsHeaders, okEnvelope, errorEnvelope, asyncHandler, attachGracefulShutdown
+- **@krusch/toolkit/streaming**: sseResponse, streamChat
+- **@krusch/toolkit/mcp**: defineMcpTool, createMcpServer, okMcpResult, errorMcpResult, validateToolArgs
+- **@krusch/toolkit/pg**: createPgPool, runSqlMigrations, pgVectorSearch, buildPgConnectionString, assertSafePgIdentifier
+- **@krusch/toolkit/sqlite** & **@krusch/toolkit/db**: openSqliteDb, escapeFts5Query, fuseRrfResults (INV-LEGO-12 zero-native-addon node:sqlite WAL + FTS5 + Hybrid RRF); initDb, query, queryOne, run, transaction, isSqliteCorruptionError
+- **@krusch/toolkit/security**: safeFetch, validateOutboundUrl, isPrivateOrReservedIp, createRateLimiter (INV-LEGO-13 DNS-pinned SSRF guard & bounded 429 rate limiter)
+- **@krusch/toolkit/react**: cn, STYLES, useAesthetics, fetchApiJson, useApiQuery, useSSEStream, AppShell, StatusPill, MetricCard, StreamingChatPanel, ErrorBoundary
+- **@krusch/toolkit/edge** / **@krusch/toolkit/webhooks** / **@krusch/toolkit/cli**: createEdgeRouter, edgeSseResponse, createEdgeKvJsonStore, readBoundedEdgeJson (zero node:*); verifySlackSignature, verifyGithubSignature, verifyStripeSignature, verifyBearerToken, signWebhookHmac, constantTimeEqual; withSingleInstanceLock, attachDaemonSignals, appendJsonlRecord, defineCli
+- **@krusch/toolkit/catalog** / **@krusch/toolkit/scaffold** / **@krusch/toolkit/lego-scout**: listLegoBricks, listArchetypes, auditBoilerplateText, scaffoldProject, scoutHomelabLegoCandidates (krusch-lego list | inspect | stamp | audit | scout)
+- **krusch_toolkit (Python v1.3)**: krusch_toolkit.fastapi_app (create_fastapi_app, ok_envelope, error_envelope, sse_event_response), krusch_toolkit.mcp (define_mcp_tool, dispatch_mcp_tool, ok_mcp_result, error_mcp_result), krusch_toolkit.pg (run_sql_migrations, pg_vector_search), krusch_toolkit.security (verify_webhook_hmac, verify_bearer_token, validate_outbound_url, is_private_or_reserved_ip)
+- **Rule-of-3 Gate (INV-LEGO-15..16)**:
+  - **Immediate LEGO-ADOPT (shipped in v1.5 / Python v1.3 ONLY)**: Migrate directly ONLY to shipped bricks listed above (@krusch/toolkit/sqlite, @krusch/toolkit/security, @krusch/toolkit/http, @krusch/toolkit/mcp, @krusch/toolkit/pg, @krusch/toolkit/streaming, @krusch/toolkit/react, @krusch/toolkit/edge, @krusch/toolkit/webhooks, @krusch/toolkit/cli).
+  - **Wave-4 CANDIDATE_MEETS_RULE_OF_3 (unbuilt — propose via /jean-loop-gate + /spec-first-refactor, do NOT import yet)**: Recurring patterns shared across >= 3 repos that are NOT yet in @krusch/toolkit v1.5 (such as Zod/Ajv schema validation -> proposed @krusch/toolkit/schema, multipart uploads -> @krusch/toolkit/upload, cascade routing -> @krusch/toolkit/cascade, Whisper/TTS -> @krusch/toolkit/audio).
+  - **Reject BELOW_THRESHOLD_DO_NOT_EXTRACT (keep-project-local)**: Any pattern used in < 3 repos or single-domain utilities (e.g., fast-xml-parser in 2 repos).
 `;
 
 export function buildOpenPrompt(context, inflightBlock) {

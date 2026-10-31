@@ -282,7 +282,17 @@ RULES (NON-NEGOTIABLE):
 1. Ground every finding strictly in the provided live source snippets, AST symbol graphs, and command outputs.
 2. NEVER invent, paraphrase, or reconstruct code snippets from memory. Only quote verbatim lines that appear in the prompt with their exact line numbers.
 3. If a prior Pending Issue is not supported by the Live Source Verification lines shown in the prompt, REFUTE and remove it.
-4. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers exactly.`;
+4. When audited files satisfy all frozen specification invariants with zero P0/P1 defects, emit a calibrated CLEAN_PASS verdict ("findings": []) rather than inventing stylistic nitpicks.
+5. Assemble application services from @krusch/toolkit v1.5 and krusch_toolkit v1.3 Lego bricks (INV-LEGO-01..16), and enforce the Rule-of-3 anti-bloat gate when evaluating toolkit candidates: only extract recurring infrastructure patterns shared across >= 3 repositories; keep < 3-repo or domain-specific helpers project-local (BELOW_THRESHOLD_DO_NOT_EXTRACT).
+6. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers and JSON contracts exactly.`;
+
+const JEAN_CONSULT_SYSTEM_PROMPT = `You are Jean, the Autonomous Principal SRE & Architectural Advisor for the Krusch homelab fleet.
+RULES (NON-NEGOTIABLE):
+1. Answer architectural, SRE, and codebase triage questions directly in concise, structured GitHub Markdown grounded in the provided Homelab Architecture Reference and Live Audit State.
+2. Recommend exact @krusch/toolkit v1.5 and krusch_toolkit v1.3 subpath imports and function names (INV-LEGO-01..16) instead of hand-rolled HTTP, SSE, MCP, SQLite/PG, SSRF/rate-limit, Webhook, or CLI boilerplate.
+3. Enforce the Rule-of-3 anti-bloat gate when evaluating candidate toolkit bricks: only extract recurring infrastructure patterns shared across >= 3 repositories (CANDIDATE_MEETS_RULE_OF_3 via /jean-loop-gate); explicitly reject < 3-repo or single-domain utilities as BELOW_THRESHOLD_DO_NOT_EXTRACT.
+4. Never hallucinate non-existent infrastructure (no nginx, k8s, Prometheus, or Grafana) or invent unverified file contents.
+5. Do NOT output <think> tags, filler prose, or bare Referee JSON envelopes unless explicitly asked for JSON.`;
 
 function prunePromptForContext(text, maxChars = 32000) {
     if (!text || text.length <= maxChars) return text;
@@ -390,6 +400,7 @@ export function normalizePortableSftText(rawText, projectName = '') {
         .replace(/\bcrush0\b/gi, 'tablet-node')
         // Generalize system prompt & homelab fleet phrasing
         .replace(/You are Jean, the Autonomous Principal SRE & Code Auditor for the Krusch homelab fleet\./gi, 'You are an Autonomous Principal Software Engineer, SRE, and Code Auditor.')
+        .replace(/You are Jean, the Autonomous Principal SRE & Architectural Advisor for the Krusch homelab fleet\./gi, 'You are an Autonomous Principal Software Engineer, SRE, and Architectural Advisor.')
         .replace(/You are Jean SRE Remediator \(powered by Qwen3-Coder-30B-MoE\), an autonomous principal engineer for the Krusch homelab fleet\./gi, 'You are an Autonomous Principal Software Engineer and Code Remediator.')
         .replace(/for the Krusch homelab fleet/gi, 'for software engineering repositories')
         .replace(/\bKrusch homelab fleet\b/gi, 'software engineering workspace');
@@ -499,7 +510,7 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
         const liveStateBrief = isSweepPrompt ? '' : buildLiveAuditStateBrief();
         const personaSystemPrompt = isSweepPrompt
             ? JEAN_SYNTHESIS_SYSTEM_PROMPT
-            : `${JEAN_SYNTHESIS_SYSTEM_PROMPT}\n\n${HOMELAB_CONTEXT}\n\n${liveStateBrief}`.trim();
+            : `${JEAN_CONSULT_SYSTEM_PROMPT}\n\n${HOMELAB_CONTEXT}\n\n${liveStateBrief}`.trim();
 
         const prunedMessage = prunePromptForContext(userMessage, personaTarget.maxPromptChars);
 
