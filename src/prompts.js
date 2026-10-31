@@ -168,7 +168,7 @@ Compile ONLY the verified, evidence-backed findings from Phases 1.1–1.9 into a
 - **ZERO-FINDING CONVERGENCE RULE**: Do NOT invent stylistic micro-refactors (\`let\` vs \`const\`, wrapping \`process.env\` reads in already-working entrypoints, or linting \`scratch/\` / one-off \`scripts/\` utilities) just to fill a card quota. If production code is clean and tests pass, a \`0\`-card \`CLEAN_PASS\` is the highest-quality outcome.
 - **STRICT ANTI-PADDING RULE**: NEVER list every directory or module in the project tree (do NOT emit generic headings like \`#### WORKSPACE\`, \`#### CHUNKING\`, \`#### TESTS\`, \`#### DOCS\`, etc.). Only include real findings backed by specific \`file:line\` evidence.
 - **Ignore Historical Fixed Issues**: Never re-report issues marked \`ALREADY RESOLVED\` or \`REFUTED\` in previous phases.
-- **Mandatory Card Schema**: Every finding (when >0 findings exist) MUST use a category-prefixed ID heading (\`#### BUG-01: <Title>\`, \`#### SEC-01: <Title>\`, \`#### ARCH-01: <Title>\`, \`#### PERF-01: <Title>\`, \`#### TEST-01: <Title>\`, \`#### DX-01: <Title>\`, or \`#### STALE-01: <Title>\`) followed by:
+- **Mandatory Card Schema**: Every finding (when >0 findings exist) MUST use a category-prefixed ID heading (\`#### BUG-01: <Title>\`, \`#### SEC-01: <Title>\`, \`#### ARCH-01: <Title>\`, \`#### LEGO-01: <Title>\`, \`#### PERF-01: <Title>\`, \`#### TEST-01: <Title>\`, \`#### DX-01: <Title>\`, or \`#### STALE-01: <Title>\`) followed by:
   - **Title:** [One-line action-oriented title]
   - **Severity:** P0 | P1 | P2 | P3
   - **Effort:** S | M | L
@@ -176,6 +176,7 @@ Compile ONLY the verified, evidence-backed findings from Phases 1.1–1.9 into a
   - **Source Audit:** [e.g. 1.3, 1.5, 1.7, 1.8]
   - **Why It Matters:** [1–2 sentences of concrete impact]
   - **Fix Instructions:** [2–3 concrete steps]
+- **Lego Toolkit Adoption (\`LEGO-01\`)**: Flag production files that hand-roll HTTP/Express setup, SSE headers, MCP stdio servers, raw \`pg.Pool\` / \`DatabaseSync\` handles, SSRF/rate-limit middleware, or un-aborted React \`fetch\` hooks instead of importing \`@krusch/toolkit/*\` v1.5 or \`krusch_toolkit.*\` v1.3 (\`INV-LEGO-01\`).
 - **Staleness & Cleanup Triage (\`STALE-01\`)**: Flag dead scripts, one-off demo files (e.g. \`demo_*.js\`), orphaned test DBs (\`*.db\`), duplicate configs/skills, or superseded prototypes that should be deleted, archived, or consolidated into \`@krusch/toolkit\`.
 - End with \`### 1. SUMMARY TABLE\`, \`### 2. RECOMMENDED BATCHES\`, \`### 3. OPEN QUESTIONS\`, \`### 4. NOT FLAGGED\`, and \`### 5. STALENESS & ARCHIVAL VERDICT\` (classifying the target as \`🟢 ACTIVE_CORE\`, \`🟡 CONSOLIDATE_OR_PRUNE\`, or \`🔴 ARCHIVE_CANDIDATE\` with concrete cleanup actions).
 
@@ -345,6 +346,19 @@ Classify every stale finding into:
 - 🔴 **Safe to Delete / Reclaim Immediately** (test DBs like nexus_test.db, empty/tmp scratch dirs, duplicate build caches)
 - 🟡 **Archive Candidates** (superseded prototypes or legacy MCP servers not in AGENTS.md with zero running containers)
 - 🔵 **Consolidate into @krusch/toolkit or .agent/skills** (duplicate root skills/ vs .agent/skills/, standalone scripts in lib/ like demo_*.js)`;
+
+        case 'lego_scout':
+            return `**Goal**: Scout cross-repository \`@krusch/toolkit\` v1.5 (\`24\` JS/TS bricks) & \`krusch_toolkit\` v1.3 (Python) adoption opportunities and Rule-of-3 candidate bricks across \`~/homelab/projects/\` WITHOUT bloating the shared toolkit.
+The deterministic \`krusch-lego scout --portable\` Ground-Truth telemetry is pre-loaded in **Previous Context** above. Cross-verify specific sample files via read-only tools before recommending action:
+
+1. sentinel: read_remote_file({ node: '${node}', path: '/home/agent/homelab/lib/spec.md' }) — verify frozen \`INV-LEGO-01..16\` contracts and existing brick exports
+2. krusch-fs: krusch_fs_search({ query: '@krusch/toolkit DatabaseSync pg.Pool safeFetch', node: '${node}', category: 'all' }) — cross-reference indexed boilerplate hotspots and page-anchored warnings
+3. sentinel: read_remote_file({ node: '${node}', path: '/home/agent/homelab/lib/catalog.js' }) — inspect current \`RUNTIME_BRICKS\` and \`auditBoilerplateText\` rules
+
+Separate every finding strictly under the **Human-Agent SRE Loop Gate (\`/jean-loop-gate\`)**:
+- 🔴 **Immediate (\`LEGO-ADOPT\`)**: Repositories hand-rolling boilerplate ALREADY covered by \`@krusch/toolkit\` v1.5 (\`./http\`, \`./streaming\`, \`./mcp\`, \`./pg\`, \`./sqlite\`, \`./security\`, \`./edge\`, \`./webhooks\`, \`./cli\`, \`./react\`) or \`krusch_toolkit\` v1.3 (\`fastapi_app\`, \`mcp\`, \`pg\`, \`security\`). Cite exact project counts and sample files.
+- 🟡 **Review Required (\`LEGO-CANDIDATE\` — Rule-of-3 Gate \`>= 3\` Projects ONLY)**: Recurring infrastructure patterns with \`CANDIDATE_MEETS_RULE_OF_3\` (\`projectCount >= 3\`). Propose exact subpath export, thin function signatures, and \`{ ok, tool, summary, data | error }\` (\`INV-LEGO-01\`) contract for human \`/spec-first-refactor\` review while keeping domain business logic project-local.
+- 🟢 **Clean / Anti-Bloat Rejected (\`BELOW_THRESHOLD_DO_NOT_EXTRACT\`)**: Explicitly list \`< 3\`-repository patterns (\`keep-project-local\`) that MUST NOT be extracted into \`@krusch/toolkit\` so the library never becomes a kitchen-sink junk drawer.`;
 
         default:
             return `Audit infrastructure on node **${node}** for optimization opportunities.`;
@@ -533,7 +547,7 @@ ${groundTruthBlock}
 ## TASK (TEXT ONLY — no tool calls)
 Refine and output the authoritative **MASTER BACKLOG for ${targetProject}** containing ONLY verified findings (0–5 task cards — emit **0 cards** and write \`**CLEAN_PASS — Zero actionable defects verified**\` under \`### 1. SUMMARY TABLE\` if no concrete runtime defect, security vulnerability, or failing test is proven in production source files):
 - **Verify against Live Source Verification above**: If any backlog item contradicts the actual source code in **Live Source Verification**, flags defensive patterns (like \`insecure_passwords\` blocklists or \`os.getenv\` defaults), or nitpicks stylistic preferences (\`let\` vs \`const\`, \`scratch/\` scripts, or one-off CLI helpers), drop the card and move it to \`### 4. NOT FLAGGED\`.
-- **Mandatory Card Format**: Every task card (when >0 findings exist) MUST start with \`#### [ID]: [Title]\` (e.g. \`#### BUG-01: Add timeout to frontend requests\`, \`#### ARCH-01: ...\`, \`#### TEST-01: ...\`, \`#### STALE-01: Remove unused legacy helper or archive superseded directory\`) and include:
+- **Mandatory Card Format**: Every task card (when >0 findings exist) MUST start with \`#### [ID]: [Title]\` (e.g. \`#### BUG-01: Add timeout to frontend requests\`, \`#### ARCH-01: ...\`, \`#### LEGO-01: Replace hand-rolled boilerplate with @krusch/toolkit brick\`, \`#### TEST-01: ...\`, \`#### STALE-01: Remove unused legacy helper or archive superseded directory\`) and include:
   - **Severity:** P0 | P1 | P2 | P3
   - **Effort:** S | M | L
   - **Evidence:** \`path/to/file.ext:line\`
@@ -543,7 +557,7 @@ Refine and output the authoritative **MASTER BACKLOG for ${targetProject}** cont
 - **No Directory Padding**: Never emit generic headings for project folders (\`WORKSPACE\`, \`CHUNKING\`, \`DOCS\`, \`TESTS\`, etc.).
 
 ### MASTER BACKLOG: ${targetProject}
-[Output the verified task cards (\`#### BUG-01\`, \`#### ARCH-01\`, \`#### STALE-01\`, etc.) followed by \`### 1. SUMMARY TABLE\`, \`### 2. RECOMMENDED BATCHES\`, \`### 3. OPEN QUESTIONS\`, \`### 4. NOT FLAGGED\`, and \`### 5. STALENESS & ARCHIVAL VERDICT\`]
+[Output the verified task cards (\`#### BUG-01\`, \`#### ARCH-01\`, \`#### LEGO-01\`, \`#### STALE-01\`, etc.) followed by \`### 1. SUMMARY TABLE\`, \`### 2. RECOMMENDED BATCHES\`, \`### 3. OPEN QUESTIONS\`, \`### 4. NOT FLAGGED\`, and \`### 5. STALENESS & ARCHIVAL VERDICT\`]
 
 ### LESSON
 [Specific architectural insight grounded in this complete audit of ${targetProject}]

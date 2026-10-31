@@ -14,6 +14,14 @@ import {
     exportElitist120bDataset
 } from '../scripts/export-120b-distillation.js';
 import { verifyZeroLeaks } from '../scripts/build_public_sft_release.js';
+import { getInfraChecklist } from '../src/prompts.js';
+import {
+    INFRA_TARGETS,
+    buildLegoScoutContextBrief,
+    buildProjectLegoBoilerplateBrief,
+    appendLegoScoutBacklogEntry,
+    parseMasterBacklogCards
+} from '../src/jean_sre_sweep.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +34,7 @@ function extractFencedJson(markdown) {
 }
 
 describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
-    test('harvestLegoAndRefereeDatasets generates balanced Zero-Leak SFT and conversational DPO splits', () => {
+    test('harvestLegoAndRefereeDatasets generates balanced Zero-Leak Wave-3 SFT and conversational DPO splits', () => {
         const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jean-sft-cal-'));
         try {
             const sftOutPath = path.join(tmpDir, 'lego_cal_sft.jsonl');
@@ -38,23 +46,25 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
             });
 
             assert.equal(res.ok, true);
-            assert.equal(res.data.counts.sftTotal, 26);
-            assert.equal(res.data.counts.cleanPass, 8);
-            assert.equal(res.data.counts.remediations, 8);
-            assert.equal(res.data.counts.legoFirst, 10);
-            assert.equal(res.data.counts.dpoTotal, 8);
+            assert.equal(res.data.counts.sftTotal, 38);
+            assert.equal(res.data.counts.cleanPass, 10);
+            assert.equal(res.data.counts.remediations, 10);
+            assert.equal(res.data.counts.legoFirst, 14);
+            assert.equal(res.data.counts.legoScout, 4);
+            assert.equal(res.data.counts.dpoTotal, 12);
             assert.equal(res.data.counts.dpoPrecision, 4);
             assert.equal(res.data.counts.dpoRecall, 4);
+            assert.equal(res.data.counts.dpoArchitecture, 4);
 
             const sftRows = fs
                 .readFileSync(sftOutPath, 'utf8')
                 .trim()
                 .split('\n')
                 .map((l) => JSON.parse(l));
-            assert.equal(sftRows.length, 26);
+            assert.equal(sftRows.length, 38);
 
             const cleanPassRows = sftRows.filter((r) => r.source === 'referee_clean_pass_calibration');
-            assert.equal(cleanPassRows.length, 8);
+            assert.equal(cleanPassRows.length, 10);
             for (const row of cleanPassRows) {
                 const parsed = extractFencedJson(row.messages[2].content);
                 assert.equal(parsed.verdict, 'CLEAN_PASS');
@@ -62,12 +72,31 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
                 assert.ok(scoreElitistTrajectory(row) >= 12);
             }
 
+            const legoFirstRows = sftRows.filter((r) => r.source === 'lego_first_sft');
+            assert.equal(legoFirstRows.length, 14);
+            for (const row of legoFirstRows) {
+                const content = row.messages[2].content;
+                assert.equal(
+                    /initDb\([^)]*schema\s*:|inputType\s*:\s*['"]query['"]|(?:[{,]|\n)\s*queryVector\s*[,:}]|createMcpServer\s*\(\s*\{|stream\.streaming\b|useApiQuery\(\s*['"][^'"]+['"]\s*,\s*\[/.test(
+                        content
+                    ),
+                    false,
+                    `Unexpected drifted @krusch/toolkit API signature in ${row.id}`
+                );
+            }
+
+            const scoutRows = sftRows.filter((r) => r.source === 'lego_scout_synthesis_sft');
+            assert.equal(scoutRows.length, 4);
+            for (const row of scoutRows) {
+                assert.ok(scoreElitistTrajectory(row) >= 14, `Expected scout SFT score >= 14 for ${row.id}`);
+            }
+
             const dpoRows = fs
                 .readFileSync(dpoOutPath, 'utf8')
                 .trim()
                 .split('\n')
                 .map((l) => JSON.parse(l));
-            assert.equal(dpoRows.length, 8);
+            assert.equal(dpoRows.length, 12);
             for (const pair of dpoRows) {
                 assert.ok(Array.isArray(pair.prompt) && pair.prompt.length >= 2);
                 assert.ok(Array.isArray(pair.chosen) && pair.chosen.length === 1);
@@ -81,9 +110,13 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
                 if (pair.mode === 'precision') {
                     assert.equal(chosenJson.verdict, 'CLEAN_PASS');
                     assert.equal(rejectedJson.verdict, 'DEFECTS_FOUND');
-                } else {
+                } else if (pair.mode === 'recall') {
                     assert.equal(chosenJson.verdict, 'DEFECTS_FOUND');
                     assert.equal(rejectedJson.verdict, 'CLEAN_PASS');
+                } else {
+                    assert.equal(pair.mode, 'architecture_calibration');
+                    assert.notEqual(chosenJson.verdict, rejectedJson.verdict);
+                    assert.ok(String(chosenJson.invariant || '').startsWith('INV-LEGO-'));
                 }
             }
 
@@ -94,7 +127,7 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
         }
     });
 
-    test('scoreElitistTrajectory rewards concise CLEAN_PASS verdicts & Lego-First bricks while penalizing raw boilerplate', () => {
+    test('scoreElitistTrajectory rewards concise CLEAN_PASS verdicts, Lego-First bricks & LEGO-* cards while penalizing raw boilerplate', () => {
         const shortCleanPass = {
             messages: [
                 { role: 'system', content: 'Auditor' },
@@ -110,27 +143,27 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
         const cleanScore = scoreElitistTrajectory(shortCleanPass);
         assert.ok(cleanScore >= 8, `Expected short CLEAN_PASS score >= 8, got ${cleanScore}`);
 
-        const legoTrajectory = {
+        const legoSqliteTrajectory = {
             messages: [
                 { role: 'system', content: 'Engineer' },
-                { role: 'user', content: 'Create PostgreSQL pool' },
+                { role: 'user', content: 'Open SQLite DB' },
                 {
                     role: 'assistant',
-                    content: `Use @krusch/toolkit/pg (INV-LEGO-01) in src/db.js:1:\n\`\`\`js\nimport { createPgPool } from '@krusch/toolkit/pg';\nexport const pool = createPgPool();\n\`\`\`\n${'x'.repeat(300)}`
+                    content: `#### LEGO-01: Adopt @krusch/toolkit/sqlite (INV-LEGO-12) in src/db.js:1:\n\`\`\`js\nimport { openSqliteDb } from '@krusch/toolkit/sqlite';\nexport const db = openSqliteDb(':memory:');\n\`\`\`\n${'x'.repeat(300)}`
                 }
             ]
         };
-        const rawBoilerplateTrajectory = {
+        const rawSqliteTrajectory = {
             messages: [
                 { role: 'system', content: 'Engineer' },
-                { role: 'user', content: 'Create PostgreSQL pool' },
+                { role: 'user', content: 'Open SQLite DB' },
                 {
                     role: 'assistant',
-                    content: `Setup pool in src/db.js:1:\n\`\`\`js\nimport pg from 'pg';\nexport const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });\n\`\`\`\n${'x'.repeat(300)}`
+                    content: `Setup DB in src/db.js:1:\n\`\`\`js\nimport { DatabaseSync } from 'node:sqlite';\nexport const db = new DatabaseSync(':memory:');\n\`\`\`\n${'x'.repeat(300)}`
                 }
             ]
         };
-        assert.ok(scoreElitistTrajectory(legoTrajectory) > scoreElitistTrajectory(rawBoilerplateTrajectory));
+        assert.ok(scoreElitistTrajectory(legoSqliteTrajectory) > scoreElitistTrajectory(rawSqliteTrajectory));
         assert.equal(
             scoreElitistTrajectory({
                 source: 'referee_clean_pass_calibration',
@@ -190,6 +223,72 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
         } finally {
             fs.rmSync(tmpDir, { recursive: true, force: true });
         }
+    });
+
+    test('Jean SRE autonomous lego_scout target, checklist, briefs, backlog writer & LEGO-* card parser work deterministically', async () => {
+        assert.ok(
+            INFRA_TARGETS.some((t) => t.node === 'kruschdev' && t.focus === 'lego_scout'),
+            'Expected INFRA_TARGETS to include kruschdev / lego_scout'
+        );
+
+        const checklist = getInfraChecklist('kruschdev', 'lego_scout');
+        assert.match(checklist, /LEGO-ADOPT/);
+        assert.match(checklist, /LEGO-CANDIDATE/);
+        assert.match(checklist, /BELOW_THRESHOLD_DO_NOT_EXTRACT/);
+        assert.match(checklist, /\/jean-loop-gate/);
+
+        const homelabRoot = path.resolve(projectRoot, '..', '..');
+        const scoutBrief = buildLegoScoutContextBrief(homelabRoot);
+        assert.match(scoutBrief, /Cross-Repository Lego Scout Ground Truth/);
+        assert.match(scoutBrief, /CANDIDATE_MEETS_RULE_OF_3/);
+        assert.match(scoutBrief, /BELOW_THRESHOLD_DO_NOT_EXTRACT/);
+
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jean-lego-brief-'));
+        try {
+            const srcDir = path.join(tmpDir, 'src');
+            fs.mkdirSync(srcDir, { recursive: true });
+            fs.writeFileSync(
+                path.join(srcDir, 'db.js'),
+                'import { DatabaseSync } from "node:sqlite";\nexport const db = new DatabaseSync(":memory:");\n',
+                'utf8'
+            );
+            const projBrief = buildProjectLegoBoilerplateBrief(tmpDir);
+            assert.match(projBrief, /raw-node-sqlite/);
+            assert.match(projBrief, /@krusch\/toolkit\/sqlite/);
+
+            const backlogFile = path.join(tmpDir, 'cleanup.md');
+            assert.equal(await appendLegoScoutBacklogEntry(backlogFile, { node: 'kruschdev' }, 'NO_FINDINGS'), false);
+            assert.equal(
+                await appendLegoScoutBacklogEntry(
+                    backlogFile,
+                    { node: 'kruschdev' },
+                    '🔴 **Immediate (`LEGO-ADOPT`)**\n- Migrate `sample-proj` to `@krusch/toolkit/sqlite`.'
+                ),
+                true
+            );
+            assert.match(fs.readFileSync(backlogFile, 'utf8'), /Lego Scout/);
+        } finally {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        }
+
+        const parsedCards = parseMasterBacklogCards(
+            [
+                '### MASTER BACKLOG: sample-proj',
+                '#### LEGO-01: Adopt @krusch/toolkit/sqlite',
+                '- **Severity:** P1',
+                '- **Effort:** S',
+                '- **Evidence:** `src/db.js:2`',
+                '- **Fix Instructions:** Replace `new DatabaseSync` with `openSqliteDb`.',
+                '### 1. SUMMARY TABLE',
+                '| ID | Title | Severity | Effort | Confidence | Source Audit |',
+                '| --- | --- | --- | --- | --- | --- |',
+                '| **LEGO-01** | Adopt @krusch/toolkit/sqlite | P1 | S | High | 1.5 |'
+            ].join('\n')
+        );
+        assert.equal(parsedCards.length, 1);
+        assert.equal(parsedCards[0].id, 'LEGO-01');
+        assert.equal(parsedCards[0].severity, 'P1');
+        assert.equal(parsedCards[0].evidence, 'src/db.js:2');
     });
 
     test('Committed calibration & public release splits pass Zero-Leak verification', () => {

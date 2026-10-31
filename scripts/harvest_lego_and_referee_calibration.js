@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizePortableSftText } from '../src/harness.js';
+import { scoutHomelabLegoCandidates } from '../../../lib/lego-scout.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,14 +45,16 @@ const AUDITOR_SYSTEM_PROMPT = [
     '2. NEVER invent, paraphrase, or reconstruct code snippets from memory. Only quote verbatim lines that appear in the prompt with their exact line numbers.',
     '3. If a prior Pending Issue is not supported by the Live Source Verification lines shown in the prompt, REFUTE and remove it.',
     '4. When audited files satisfy all frozen specification invariants with zero P0/P1 defects, emit a calibrated CLEAN_PASS verdict ("findings": []) rather than inventing stylistic nitpicks.',
-    '5. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers and JSON contracts exactly.'
+    '5. Enforce the Rule-of-3 anti-bloat gate when evaluating toolkit candidates: only extract recurring infrastructure patterns shared across >= 3 repositories; keep < 3-repo or domain-specific helpers project-local.',
+    '6. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers and JSON contracts exactly.'
 ].join('\n');
 
 const LEGO_ENGINEER_SYSTEM_PROMPT = [
-    'You are a Principal Full-Stack & Systems Engineer assembling production software with @krusch/toolkit v1.4 and krusch_toolkit v1.2 Lego bricks.',
+    'You are a Principal Full-Stack & Systems Engineer assembling production software with @krusch/toolkit v1.5 (24 bricks) and krusch_toolkit v1.3 Lego bricks.',
     'RULES (NON-NEGOTIABLE):',
-    '1. INV-LEGO-01: Assemble HTTP servers, SSE streams, MCP tools, PostgreSQL/pgvector pools, SQLite WAL stores, React hooks/shells, Cloudflare Workers, HMAC webhooks, and single-instance CLIs from @krusch/toolkit/* and krusch_toolkit.* bricks—never hand-roll boilerplate.',
-    '2. Enforce deterministic { ok, tool, summary, data | error } envelopes, AbortController cancellation, constant-time HMAC/Bearer verification, and strict TypeScript (.d.ts / --experimental-strip-types) compatibility.'
+    '1. INV-LEGO-01: Assemble HTTP servers, SSE streams, MCP tools, PostgreSQL/pgvector pools, node:sqlite FTS5/RRF stores, SSRF-safe outbound fetch & rate limiters, React hooks/shells, Cloudflare Workers, HMAC webhooks, and single-instance CLIs from @krusch/toolkit/* and krusch_toolkit.* bricks—never hand-roll boilerplate.',
+    '2. Enforce deterministic { ok, tool, summary, data | error } envelopes, AbortController cancellation, constant-time HMAC/Bearer verification, connect-time DNS-rebinding SSRF protection, and strict TypeScript (.d.ts / --experimental-strip-types) compatibility.',
+    '3. Enforce Rule-of-3 anti-bloat discipline (INV-LEGO-15): only promote cross-repository infrastructure patterns appearing in >= 3 projects into @krusch/toolkit.'
 ].join('\n');
 
 const COMPACT_LEGO_SPEC = [
@@ -61,7 +64,10 @@ const COMPACT_LEGO_SPEC = [
     '- INV-LEGO-08 (Edge Purity): @krusch/toolkit/edge contains zero node:* imports, rejects Origin: null/false/CRLF, enforces chunked stream maxBytes (413), and aborts SSE on stream cancel.',
     '- INV-LEGO-09 (Constant-Time Webhooks & Bearer): @krusch/toolkit/webhooks verifies Slack/GitHub/Stripe HMACs and SHA-256 pre-hashed Bearer tokens via crypto.timingSafeEqual after equal-length checks, failing closed on empty secrets.',
     '- INV-LEGO-10 (Atomic CLI & Daemon): @krusch/toolkit/cli uses exclusive wx PID+nonce lockfiles in withSingleInstanceLock (wrapping thrown callback errors in errorEnvelope unless rethrow:true and unlinking only owned nonces in finally) and prototype-safe defineCli.',
-    '- INV-LEGO-11 (Strict TypeScript Parity): lib/types/*.d.ts matches runtime exports 1:1 under tsc --noEmit --strict (including contravariant Logger meta types).'
+    '- INV-LEGO-11 (Strict TypeScript Parity): lib/types/*.d.ts matches runtime exports 1:1 under tsc --noEmit --strict (including contravariant Logger meta types).',
+    '- INV-LEGO-12 (Node 22 SQLite, FTS5 & RRF): @krusch/toolkit/sqlite configures WAL durability pragmas on DatabaseSync, normalizes null-prototype rows, enforces synchronous savepoint transactions, double-quotes FTS5 tokens in escapeFts5Query, and deduplicates/merges prototype-safely in fuseRrfResults.',
+    '- INV-LEGO-13 (SSRF & Rate Limit): @krusch/toolkit/security blocks loopback, RFC1918, Tailscale CGNAT (unless allowlisted), 169.254.169.254 cloud metadata, IPv4-mapped/6to4/Teredo IPv6, and TOCTOU DNS rebinding at socket connect in safeFetch, plus bounded-key createRateLimiter.',
+    '- INV-LEGO-14..15 (Python v1.3 Parity & Rule-of-3 Scout): krusch_toolkit.{mcp,pg,security} enforce 4-boolean MCP annotations, SQLi-guarded 1024d pgvector search, and SSRF/HMAC parity; @krusch/toolkit/lego-scout enforces symlink containment and Rule-of-3 (>= 3 repos) extraction gating.'
 ].join('\n');
 
 /**
@@ -183,6 +189,25 @@ export function buildCleanPassCalibrationRows(nowIso) {
             window: () => readNumberedWindow('lib-py/krusch_toolkit/fastapi_app.py', 1, 150),
             rationale:
                 'ok_envelope and error_envelope import cleanly without FastAPI installed, while create_fastapi_app wires X-Request-ID timing, deterministic JSON exception envelopes, and /health + /doctor readiness probes.'
+        },
+        {
+            id: 'referee-clean-pass-sqlite-fts5-rrf',
+            sliceId: 'slice_wave3_sqlite_fts5_rrf',
+            title: 'Zero-Native-Addon Node 22 SQLite WAL, FTS5 Escaping & Prototype-Safe RRF',
+            files: ['lib/sqlite.js'],
+            window: () =>
+                `${readNumberedWindow('lib/sqlite.js', 295, 439)}`,
+            rationale:
+                'escapeFts5Query caps raw input at 2048 chars, extracts Unicode word tokens, and double-quotes every token (preventing fts5: syntax error on AND/OR/NOT/NEAR/*), while fuseRrfResults enforces seenInList deduplication and Object.hasOwn prototype-safe merging.'
+        },
+        {
+            id: 'referee-clean-pass-security-ssrf-guard',
+            sliceId: 'slice_wave3_security_ssrf',
+            title: 'Fail-Closed IPv4/IPv6/6to4/Teredo/Metadata SSRF Classifier',
+            files: ['lib/security.js'],
+            window: () => readNumberedWindow('lib/security.js', 136, 265),
+            rationale:
+                'isPrivateOrReservedIp fails closed on non-canonical IPv4 literals, %zone suffixes, loopback, 169.254.0.0/16 cloud metadata, RFC1918/Tailscale CGNAT (unless explicitly allowlisted), and recursively inspects IPv4-mapped, NAT64, 6to4, and Teredo IPv6 addresses.'
         }
     ];
 
@@ -416,6 +441,44 @@ export function buildDefectRemediationRows(nowIso) {
             description:
                 'Under TypeScript strictFunctionTypes, function parameter types are contravariant: Logger.info(msg, meta?: Record<string, unknown>) is NOT assignable to HttpLoggerLike.info(msg, meta?: unknown), causing tsc --noEmit --strict to fail in node-ts-service.',
             fix: 'Widen Logger method meta parameters to `Record<string, unknown> | unknown` so setupLogging() instances pass directly into createApiServer({ logger }).'
+        },
+        {
+            id: 'remediation-sqlite-fts5-unquoted-syntax-crash',
+            file: 'projects/sample-notes/src/search.js',
+            line: 4,
+            severity: 'P1',
+            invariant: 'INV-LEGO-12',
+            title: 'Escape raw user queries before SQLite FTS5 MATCH to prevent syntax crashes',
+            buggySnippet: [
+                '1: import { DatabaseSync } from "node:sqlite";',
+                '2: const db = new DatabaseSync("./data/notes.db");',
+                '3: export function searchNotes(userQuery) {',
+                '4:     return db.prepare("SELECT id, title FROM notes_fts WHERE notes_fts MATCH ? LIMIT 20").all(userQuery);',
+                '5: }'
+            ].join('\n'),
+            quote: 'return db.prepare("SELECT id, title FROM notes_fts WHERE notes_fts MATCH ? LIMIT 20").all(userQuery);',
+            description:
+                'Passing raw user input directly to SQLite FTS5 MATCH throws SQLITE_ERROR: fts5: syntax error whenever queries contain C++, hyphens, colons, unbalanced quotes, or boolean keywords (AND/OR/NOT/NEAR), and instantiates raw DatabaseSync without WAL durability pragmas.',
+            fix: 'Open the database with openSqliteDb from @krusch/toolkit/sqlite and sanitize userQuery with escapeFts5Query(userQuery, { operator: "AND" }), returning [] immediately when the escaped query is empty.'
+        },
+        {
+            id: 'remediation-security-ssrf-ipv6-mapped-redirect',
+            file: 'projects/sample-webhook/src/dispatcher.js',
+            line: 3,
+            severity: 'P0',
+            invariant: 'INV-LEGO-13',
+            title: 'Replace naive hostname regex SSRF check with DNS-rebinding-safe safeFetch',
+            buggySnippet: [
+                '1: export async function deliverWebhook(targetUrl, payload) {',
+                '2:     const parsed = new URL(targetUrl);',
+                '3:     if (/^(localhost|127\\.)/i.test(parsed.hostname)) throw new Error("Blocked");',
+                '4:     return fetch(targetUrl, { method: "POST", body: JSON.stringify(payload) });',
+                '5: }'
+            ].join('\n'),
+            quote: 'if (/^(localhost|127\\.)/i.test(parsed.hostname)) throw new Error("Blocked");',
+            description:
+                'Regex checking only localhost and 127.* is trivially bypassed via cloud metadata (169.254.169.254), IPv4-mapped IPv6 ([::ffff:127.0.0.1]), octal/integer IPs, DNS rebinding, and 302 redirects to internal endpoints.',
+            fix: 'Replace manual URL regex + raw fetch() with safeFetch(targetUrl, { method: "POST", body: JSON.stringify(payload) }) from @krusch/toolkit/security, which validates all resolved IPs at socket connect time and re-validates every redirect hop.'
         }
     ];
 
@@ -467,7 +530,7 @@ export function buildDefectRemediationRows(nowIso) {
 
 /**
  * Category 3: "Lego-First" synthesis & anti-boilerplate refactoring pairs so local 30B/7B & G4 120B
- * natively import @krusch/toolkit v1.4 and krusch_toolkit v1.2 bricks instead of hand-rolling plumbing.
+ * natively import @krusch/toolkit v1.5 and krusch_toolkit v1.3 bricks instead of hand-rolling plumbing.
  */
 export function buildLegoFirstSynthesisRows(nowIso) {
     const tasks = [
@@ -479,13 +542,12 @@ export function buildLegoFirstSynthesisRows(nowIso) {
                 'Assemble the service directly from `@krusch/toolkit/http`, `@krusch/toolkit/db`, and `@krusch/toolkit/log` so zero HTTP/CORS/SQLite boilerplate is hand-rolled:',
                 '```js',
                 "import { createApiServer, okEnvelope, errorEnvelope, attachGracefulShutdown } from '@krusch/toolkit/http';",
-                "import { initDb, query, run, closeDb } from '@krusch/toolkit/db';",
+                "import { initDb, exec, query, run, closeDb } from '@krusch/toolkit/db';",
                 "import { setupLogging } from '@krusch/toolkit/log';",
                 '',
                 "const logger = setupLogging('notes-api');",
-                "initDb(process.env.DB_PATH || './data/notes.db', {",
-                '  schema: `CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);`',
-                '});',
+                "initDb(process.env.DB_PATH || './data/notes.db');",
+                'exec(`CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);`);',
                 '',
                 'export const server = createApiServer({',
                 "  serviceName: 'notes-api',",
@@ -519,14 +581,16 @@ export function buildLegoFirstSynthesisRows(nowIso) {
                 'Replace manual `res.writeHead` SSE plumbing with `streamChat` (or `sseResponse`) from `@krusch/toolkit/streaming`, which enforces `X-Accel-Buffering: no`, `: ping` heartbeats, and automatic `AbortController` cancellation on client disconnect:',
                 '```js',
                 "import { streamChat } from '@krusch/toolkit/streaming';",
-                "import { chat } from '@krusch/toolkit/llm';",
                 '',
                 'export async function handleChatStream({ req, res, body }) {',
                 '  await streamChat(res, req, {',
                 "    tool: 'assistant.stream',",
+                "    systemPrompt: 'You are a concise engineering assistant.',",
                 "    userMessage: String(body?.prompt || ''),",
-                '    chatFn: ({ messages, signal, onToken }) =>',
-                "      chat(messages, { provider: 'ollama', signal, onToken })",
+                '    config: {',
+                "      provider: 'ollama',",
+                "      model: process.env.OLLAMA_MODEL || 'qwen2.5-coder:7b'",
+                '    }',
                 '  });',
                 '}',
                 '```'
@@ -555,16 +619,16 @@ export function buildLegoFirstSynthesisRows(nowIso) {
                 '    destructiveHint: false,',
                 '    idempotentHint: true,',
                 '    openWorldHint: false',
-                '  },',
-                '  handler: async ({ query }) =>',
-                "    okMcpResult('docs_search', `Matched documents for \"${query}\"`, { query, matches: [] })",
+                '  }',
                 '});',
                 '',
-                'export const mcp = createMcpServer({',
-                "  name: 'docs-mcp',",
-                "  version: '1.0.0',",
-                '  tools: [searchDocsTool]',
-                '});',
+                'export const mcp = createMcpServer(',
+                "  'docs-mcp',",
+                "  '1.0.0',",
+                '  [searchDocsTool],',
+                '  async (name, args) =>',
+                "    okMcpResult(name, `Matched documents for \"${args.query}\"`, { query: args.query, matches: [] })",
+                ');',
                 '```'
             ].join('\n')
         },
@@ -596,13 +660,13 @@ export function buildLegoFirstSynthesisRows(nowIso) {
                 '}',
                 '',
                 'export async function searchKnowledgeBase(question, limit = 8) {',
-                "  const queryVector = await embed(question, { inputType: 'query' });",
+                "  const queryVector = await embed(question, { mode: 'query' });",
                 '  return pgVectorSearch(pool, {',
                 "    table: 'kb_chunks',",
-                "    vectorColumn: 'embedding',",
+                "    embeddingColumn: 'embedding',",
                 "    selectColumns: ['id', 'doc_key', 'content'],",
-                '    queryVector,',
-                '    dimensions: 1024,',
+                '    vector: queryVector,',
+                '    expectedDims: 1024,',
                 '    limit',
                 '  });',
                 '}',
@@ -755,17 +819,18 @@ export function buildLegoFirstSynthesisRows(nowIso) {
                 "import { AppShell, StatusPill, MetricCard, useApiQuery, useSSEStream } from '@krusch/toolkit/react';",
                 '',
                 'export function ServiceDashboard() {',
-                "  const { data, loading, error, reload } = useApiQuery('/api/metrics', []);",
+                "  const { data, loading, error, reload } = useApiQuery('/api/metrics', { deps: [] });",
                 "  const stream = useSSEStream('/api/chat/stream');",
                 '',
                 '  return (',
                 '    <AppShell',
                 '      title="Operations Console"',
-                '      status={<StatusPill status={error ? "error" : loading ? "loading" : "healthy"} label={error ? "Degraded" : "Online"} />}',
+                '      status={<StatusPill status={error ? "degraded" : loading ? "streaming" : "healthy"} label={error ? "Degraded" : "Online"} />}',
                 '    >',
-                '      <MetricCard label="Requests" value={data?.requests ?? 0} onClick={reload} />',
+                '      <MetricCard label="Requests" value={data?.requests ?? 0} />',
+                '      <button type="button" onClick={reload}>Refresh</button>',
                 '      <button type="button" onClick={() => stream.start({ prompt: "Summarize health" })}>Run Check</button>',
-                '      {stream.streaming && <button type="button" onClick={stream.stop}>Stop</button>}',
+                '      {stream.status === "streaming" && <button type="button" onClick={stream.stop}>Stop</button>}',
                 '      <pre>{stream.text}</pre>',
                 '    </AppShell>',
                 '  );',
@@ -817,6 +882,124 @@ export function buildLegoFirstSynthesisRows(nowIso) {
                 '    return sse_event_response(gen(), request=request)',
                 '```'
             ].join('\n')
+        },
+        {
+            id: 'lego-first-sqlite-fts5-rrf-hybrid',
+            prompt:
+                'Build a zero-native-addon Node 22 hybrid retrieval module (`src/hybrid-store.js`) combining SQLite FTS5 BM25 keyword search and dense vector candidates via Reciprocal Rank Fusion without `better-sqlite3` or unquoted FTS5 syntax errors.',
+            answer: [
+                'Use `openSqliteDb`, `escapeFts5Query`, and `fuseRrfResults` from `@krusch/toolkit/sqlite` (`INV-LEGO-12`):',
+                '```js',
+                "import { openSqliteDb, escapeFts5Query, fuseRrfResults } from '@krusch/toolkit/sqlite';",
+                '',
+                "export const store = openSqliteDb(process.env.SQLITE_PATH || './data/hybrid.db');",
+                'store.exec(`',
+                '  CREATE TABLE IF NOT EXISTS docs (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL);',
+                '  CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(id UNINDEXED, title, body);',
+                '`);',
+                '',
+                'export function searchHybrid(rawQuery, denseHits = [], limit = 10) {',
+                "  const ftsQuery = escapeFts5Query(rawQuery, { operator: 'AND', prefixLastToken: true });",
+                '  const lexicalHits = ftsQuery',
+                "    ? store.query('SELECT id, title, bm25(docs_fts) AS rank FROM docs_fts WHERE docs_fts MATCH ? ORDER BY rank LIMIT 30', [ftsQuery])",
+                '    : [];',
+                "  return fuseRrfResults([lexicalHits, denseHits], { k: 60, idKey: 'id', limit, weights: [1.0, 1.2] });",
+                '}',
+                '```'
+            ].join('\n')
+        },
+        {
+            id: 'lego-first-security-safefetch-ratelimit',
+            prompt:
+                'Implement an Express outbound webhook test endpoint protected against SSRF (blocking `169.254.169.254`, RFC1918, IPv4-mapped IPv6, and DNS rebinding on redirects) and per-IP `429` rate limiting using `@krusch/toolkit/security`.',
+            answer: [
+                'Compose `safeFetch` and `createRateLimiter` from `@krusch/toolkit/security` (`INV-LEGO-13`):',
+                '```js',
+                "import { safeFetch, createRateLimiter } from '@krusch/toolkit/security';",
+                "import { okEnvelope } from '@krusch/toolkit/http';",
+                '',
+                "export const webhookLimiter = createRateLimiter({ windowMs: 60_000, max: 20, maxKeys: 5_000, tool: 'webhook.rateLimit' });",
+                '',
+                'export async function handleTestWebhook(req, res) {',
+                "  const result = await safeFetch(req.body?.targetUrl, {",
+                "    method: 'POST',",
+                "    headers: { 'Content-Type': 'application/json' },",
+                "    body: JSON.stringify({ ping: true })",
+                "  }, { maxRedirects: 2, timeoutMs: 8_000, allowPrivateLan: false, tool: 'webhook.probe' });",
+                '',
+                '  if (!result.ok) return res.status(400).json(result);',
+                "  return res.status(200).json(okEnvelope('webhook.probe', 'Delivered probe safely', { status: result.data.status, redirected: result.data.redirected }));",
+                '}',
+                '```'
+            ].join('\n')
+        },
+        {
+            id: 'lego-first-python-mcp-pgvector-parity',
+            prompt:
+                'Build a Python 3.12 MCP tool handler and SQLi-guarded 1024-dim `pgvector` search helper using `krusch_toolkit.mcp` and `krusch_toolkit.pg` (`INV-LEGO-14`).',
+            answer: [
+                'Import `define_mcp_tool`, `dispatch_mcp_tool`, and `ok_mcp_result` from `krusch_toolkit.mcp` alongside `run_sql_migrations` and `pg_vector_search` from `krusch_toolkit.pg`:',
+                '```python',
+                'from krusch_toolkit.mcp import define_mcp_tool, dispatch_mcp_tool, ok_mcp_result',
+                'from krusch_toolkit.pg import run_sql_migrations, pg_vector_search',
+                '',
+                'SEARCH_TOOL = define_mcp_tool(',
+                '    name="clauses_search",',
+                '    title="Search Contract Clauses",',
+                '    description="Cosine search over 1024d clause embeddings.",',
+                '    input_schema={',
+                '        "type": "object",',
+                '        "properties": {"query_vec": {"type": "array"}, "limit": {"type": "integer"}},',
+                '        "required": ["query_vec"],',
+                '    },',
+                '    read_only_hint=True,',
+                '    destructive_hint=False,',
+                '    idempotent_hint=True,',
+                '    open_world_hint=False,',
+                ')',
+                '',
+                'def init_db(conn):',
+                '    return run_sql_migrations(conn, [{"id": "001_clauses", "sql": "CREATE TABLE IF NOT EXISTS clauses (id TEXT PRIMARY KEY, body TEXT, embedding vector(1024));"}])',
+                '',
+                'async def handle_mcp_call(conn, name: str, args: dict):',
+                '    async def _run(tool_name: str, safe_args: dict):',
+                '        res = pg_vector_search(',
+                '            conn,',
+                '            table="clauses",',
+                '            vector=safe_args["query_vec"],',
+                '            select_columns=("id", "body"),',
+                '            limit=safe_args.get("limit", 8),',
+                '            expected_dims=1024,',
+                '        )',
+                '        return ok_mcp_result(tool_name, "Retrieved clauses", res["data"])',
+                '    return await dispatch_mcp_tool([SEARCH_TOOL], _run, name, args)',
+                '```'
+            ].join('\n')
+        },
+        {
+            id: 'lego-first-python-security-ssrf-hmac',
+            prompt:
+                'Validate inbound HMAC-SHA256 webhook signatures, Bearer tokens, and outbound callback URLs in Python 3.12 without hand-rolling `hmac.new` or regex IP checks (`INV-LEGO-14`).',
+            answer: [
+                'Use `verify_webhook_hmac`, `verify_bearer_token`, and `validate_outbound_url` from `krusch_toolkit.security`:',
+                '```python',
+                'import os',
+                'from krusch_toolkit.security import (',
+                '    verify_webhook_hmac,',
+                '    verify_bearer_token,',
+                '    validate_outbound_url,',
+                ')',
+                '',
+                'def verify_callback_request(raw_body: bytes, sig_header: str, auth_header: str, callback_url: str) -> dict:',
+                '    auth = verify_bearer_token(auth_header, os.environ.get("API_BEARER_SECRET", ""))',
+                '    if not auth["ok"]:',
+                '        return auth',
+                '    sig = verify_webhook_hmac(raw_body, sig_header, os.environ.get("WEBHOOK_SIGNING_SECRET", ""), prefix="sha256=")',
+                '    if not sig["ok"]:',
+                '        return sig',
+                '    return validate_outbound_url(callback_url, allow_private_lan=False, allow_tailscale=False)',
+                '```'
+            ].join('\n')
         }
     ];
 
@@ -834,6 +1017,240 @@ export function buildLegoFirstSynthesisRows(nowIso) {
             { role: 'system', content: LEGO_ENGINEER_SYSTEM_PROMPT },
             { role: 'user', content: normalizePortableSftText(t.prompt, 'toolkit') },
             { role: 'assistant', content: normalizePortableSftText(t.answer, 'toolkit') }
+        ]
+    }));
+}
+
+/**
+ * Category 4: Live Cross-Repository `lego_scout` Rule-of-3 Triage & Spec Synthesis SFT (`INV-LEGO-15..16`).
+ * Harvests live telemetry from `scoutHomelabLegoCandidates(<HOMELAB_ROOT>/projects, { minProjects: 3, portablePaths: true })`
+ * so Jean SRE learns both proactive cross-repo brick discovery AND strict anti-bloat rejection (`< 3` repos).
+ */
+export function buildLegoScoutSynthesisRows(nowIso) {
+    const projectsRoot = path.join(homelabRoot, 'projects');
+    const scoutRes = scoutHomelabLegoCandidates(projectsRoot, {
+        minProjects: 3,
+        portablePaths: true
+    });
+    const d = scoutRes?.ok && scoutRes.data
+        ? scoutRes.data
+        : {
+              scannedProjects: 20,
+              scannedFilesTotal: 400,
+              ruleOfThreeThreshold: 3,
+              adoptionFindings: [],
+              candidateClusters: []
+          };
+
+    const topAdopt = d.adoptionFindings.slice(0, 5);
+    const coveredClusters = d.candidateClusters.filter((c) => c.status === 'ALREADY_COVERED_IN_TOOLKIT');
+    const ruleOf3Clusters = d.candidateClusters.filter((c) => c.status === 'CANDIDATE_MEETS_RULE_OF_3');
+    const rejectedClusters = d.candidateClusters.filter((c) => c.status === 'BELOW_THRESHOLD_DO_NOT_EXTRACT');
+
+    const compactTelemetryJson = JSON.stringify(
+        {
+            scannedProjects: d.scannedProjects,
+            scannedFilesTotal: d.scannedFilesTotal,
+            ruleOfThreeThreshold: d.ruleOfThreeThreshold,
+            topAdoptionFindings: topAdopt.map((f) => ({
+                project: f.project,
+                findingCount: f.findingCount,
+                rulesTriggered: f.rulesTriggered,
+                recommendedBricks: f.recommendedBricks,
+                sampleFile: f.sampleFiles[0] || ''
+            })),
+            coveredClusters: coveredClusters.map((c) => ({
+                id: c.id,
+                projectCount: c.projectCount,
+                status: c.status,
+                proposedBrickImport: c.proposedBrickImport
+            })),
+            candidateClusters: ruleOf3Clusters.map((c) => ({
+                id: c.id,
+                projectCount: c.projectCount,
+                status: c.status,
+                proposedBrickImport: c.proposedBrickImport,
+                sampleFile: c.sampleEvidence[0] || ''
+            })),
+            rejectedBelowThreshold: rejectedClusters.map((c) => ({
+                id: c.id,
+                projectCount: c.projectCount,
+                status: c.status,
+                proposedBrickImport: c.proposedBrickImport,
+                projects: c.projects
+            }))
+        },
+        null,
+        2
+    );
+
+    const schemaCluster = ruleOf3Clusters.find((c) => c.id === 'schema-contract-validation') || ruleOf3Clusters[0];
+    const rejectedCluster = rejectedClusters[0] || {
+        id: 'niche-xml-or-yaml',
+        projectCount: 1,
+        status: 'BELOW_THRESHOLD_DO_NOT_EXTRACT',
+        proposedBrickImport: 'keep-project-local',
+        projects: ['berean'],
+        sampleEvidence: ['<HOMELAB_ROOT>/projects/berean/package.json']
+    };
+
+    const rows = [
+        {
+            id: 'lego-scout-monorepo-triage-report',
+            phase: 'INFRA_LEGO_SCOUT',
+            system: AUDITOR_SYSTEM_PROMPT,
+            prompt: [
+                '## JEAN SRE: INFRA REPORT SYNTHESIS (lego_scout)',
+                'Analyze the Executed `krusch-lego scout --portable` Ground-Truth JSON below and produce a gated `INFRA REPORT` separating immediate `@krusch/toolkit` v1.5 / `krusch_toolkit` v1.3 adoptions (`LEGO-ADOPT`), Rule-of-3 brick candidates (`>= 3` repos), and anti-bloat rejections (`< 3` repos):',
+                `\`\`\`json\n${compactTelemetryJson}\n\`\`\``
+            ].join('\n\n'),
+            answer: [
+                '### INFRA REPORT: workspace / lego_scout',
+                '',
+                '🔴 **Immediate (`LEGO-ADOPT` — Migrate to Existing `@krusch/toolkit` v1.5 / `krusch_toolkit` v1.3 Bricks)**',
+                ...topAdopt.slice(0, 3).map(
+                    (f) =>
+                        `- **\`${f.project}\`** (\`${f.findingCount}\` static hit(s) in \`${f.sampleFiles[0] || f.project}\`): triggered \`${f.rulesTriggered.join(', ')}\` → replace hand-rolled plumbing with \`${f.recommendedBricks.join(', ')}\`.`
+                ),
+                ...coveredClusters.map(
+                    (c) =>
+                        `- **Cluster \`${c.id}\`** (\`${c.projectCount}\` repositories): \`${c.status}\` → standardize remaining brownfield callers onto \`${c.proposedBrickImport}\`.`
+                ),
+                '',
+                '🟡 **Review Required (`LEGO-CANDIDATE` — Meets Rule-of-3 Gate `>= 3` Repositories; Gated by `/jean-loop-gate`)**',
+                ...ruleOf3Clusters.map(
+                    (c) =>
+                        `- **\`${c.id}\` → \`${c.proposedBrickImport}\`** (\`${c.projectCount}\` repositories >= \`${d.ruleOfThreeThreshold}\`, sample \`${c.sampleEvidence[0] || 'workspace'}\`): Propose thin \`/spec-first-refactor\` contract emitting \`{ ok, tool, summary, data | error }\` (\`INV-LEGO-01\`) while keeping domain logic project-local.`
+                ),
+                '',
+                '🟢 **Clean / Anti-Bloat Rejected (`BELOW_THRESHOLD_DO_NOT_EXTRACT` — `< 3` Repositories)**',
+                `- **\`${rejectedCluster.id}\`** (\`${rejectedCluster.projectCount}\` repository: \`${rejectedCluster.projects.join(', ')}\` < \`${d.ruleOfThreeThreshold}\`): Marked \`${rejectedCluster.proposedBrickImport}\`. Do NOT extract single-domain parsers into \`@krusch/toolkit\`.`,
+                '',
+                '### LESSON',
+                `Cross-repo scouting across \`${d.scannedProjects}\` projects (\`${d.scannedFilesTotal}\` files) separates brownfield adoption debt (\`LEGO-ADOPT\`) from genuine \`>= ${d.ruleOfThreeThreshold}\`-repo abstractions while blocking \`${rejectedCluster.id}\` (\`${rejectedCluster.projectCount}\` repo) from bloating \`@krusch/toolkit\`.`
+            ].join('\n')
+        },
+        {
+            id: 'lego-scout-spec-synthesis-rule-of-3',
+            phase: 'LEGO_SPEC_SYNTHESIS',
+            system: LEGO_ENGINEER_SYSTEM_PROMPT,
+            prompt: [
+                `The autonomous \`lego_scout\` sweep identified cluster \`${schemaCluster?.id || 'schema-contract-validation'}\` across \`${schemaCluster?.projectCount || 6}\` repositories (\`CANDIDATE_MEETS_RULE_OF_3\`, sample \`${schemaCluster?.sampleEvidence?.[0] || '<HOMELAB_ROOT>/projects/sample/package.json'}\`).`,
+                'Draft a minimal, anti-bloat `/spec-first-refactor` contract (`INV-LEGO-SCHEMA`) for `@krusch/toolkit/schema` that satisfies `INV-LEGO-01` and `INV-LEGO-11` without coupling `@krusch/toolkit` to heavy ORMs.'
+            ].join('\n\n'),
+            answer: [
+                `### Frozen Spec Proposal: \`@krusch/toolkit/schema\` (\`${schemaCluster?.projectCount || 6}\` Repositories — Passes Rule-of-3)`,
+                '',
+                '- **Admission Evidence:** Verified `CANDIDATE_MEETS_RULE_OF_3` across `>= 3` active repositories; domain models remain project-local.',
+                '- **Zero-Bloat Boundary:** Accepts duck-typed `{ safeParse(input) }` (Zod) or lightweight JSON Schema `{ type, required, properties }` objects—zero heavy ORM or codegen dependencies.',
+                '- **Exact Exports (`lib/schema.js` + `lib/types/schema.d.ts`):**',
+                '```ts',
+                "import type { LegoEnvelope } from './envelopes.js';",
+                '',
+                'export interface SchemaLike<T = Record<string, unknown>> {',
+                '  safeParse?: (input: unknown) => { success: boolean; data?: T; error?: { issues?: unknown[] } };',
+                '  required?: readonly string[];',
+                '  properties?: Record<string, { type?: string }>;',
+                '}',
+                '',
+                'export function validatePayload<T = Record<string, unknown>>(',
+                '  schema: SchemaLike<T>,',
+                '  payload: unknown,',
+                '  options?: { tool?: string }',
+                '): LegoEnvelope<T>;',
+                '```',
+                '- **Envelope Contract (`INV-LEGO-01`):** Returns `okEnvelope(tool, "Payload validated", parsedData)` on valid input and `errorEnvelope("VALIDATION_ERROR", message, { issues }, tool)` on mismatch without throwing.'
+            ].join('\n')
+        },
+        {
+            id: 'lego-scout-brownfield-backlog-cards',
+            phase: '2_MASTER_BACKLOG',
+            system: AUDITOR_SYSTEM_PROMPT,
+            prompt: [
+                '## JEAN SRE: IMPLEMENTER PHASE (Final Master Backlog Synthesis — NO tool calls)',
+                'Synthesize verified `LEGO-*` task cards from the live source verification below:',
+                '### FILE: `src/db.js` (showing lines 1-6)',
+                '```js',
+                '1: import { DatabaseSync } from "node:sqlite";',
+                '2: export const db = new DatabaseSync("./data/app.db");',
+                '3: export function search(q) {',
+                '4:   return db.prepare("SELECT id FROM docs_fts WHERE docs_fts MATCH ?").all(q);',
+                '5: }',
+                '```',
+                '### FILE: `src/webhook.js` (showing lines 1-5)',
+                '```js',
+                '1: export async function notify(url, body) {',
+                '2:   return fetch(url, { method: "POST", body: JSON.stringify(body) });',
+                '3: }',
+                '```'
+            ].join('\n\n'),
+            answer: [
+                '### MASTER BACKLOG: sample-app',
+                '',
+                '#### LEGO-01: Migrate raw DatabaseSync and unescaped FTS5 MATCH to @krusch/toolkit/sqlite',
+                '- **Severity:** P1',
+                '- **Effort:** S',
+                '- **Evidence:** `src/db.js:1-5`',
+                '- **Fix Instructions:** Replace `new DatabaseSync(...)` with `openSqliteDb("./data/app.db")` (`INV-LEGO-12` WAL pragmas) and wrap `q` in `escapeFts5Query(q)` before `MATCH ?` so punctuation/operators cannot throw `fts5: syntax error`.',
+                '',
+                '#### LEGO-02: Replace unvalidated outbound fetch with @krusch/toolkit/security safeFetch',
+                '- **Severity:** P1',
+                '- **Effort:** S',
+                '- **Evidence:** `src/webhook.js:1-3`',
+                '- **Fix Instructions:** Replace raw `fetch(url, ...)` with `safeFetch(url, { method: "POST", body: JSON.stringify(body) })` from `@krusch/toolkit/security` (`INV-LEGO-13`) to block loopback, cloud metadata (`169.254.169.254`), and DNS-rebinding redirects.',
+                '',
+                '### 1. SUMMARY TABLE',
+                '| ID | Title | Severity | Effort | Confidence | Source Audit |',
+                '| --- | --- | --- | --- | --- | --- |',
+                '| **LEGO-01** | Migrate raw DatabaseSync and unescaped FTS5 MATCH to @krusch/toolkit/sqlite | P1 | S | High | 1.5 |',
+                '| **LEGO-02** | Replace unvalidated outbound fetch with @krusch/toolkit/security safeFetch | P1 | S | High | 1.4 |',
+                '',
+                '### 4. NOT FLAGGED',
+                '- JSON serialization in `notify` is valid once wrapped in `safeFetch`.',
+                '',
+                '### 5. STALENESS & ARCHIVAL VERDICT',
+                '`ACTIVE_CORE` — adopt Wave-3 `@krusch/toolkit` bricks (`./sqlite`, `./security`).'
+            ].join('\n')
+        },
+        {
+            id: 'lego-scout-anti-bloat-single-repo-rejection',
+            phase: 'LEGO_ANTI_BLOAT_GATE',
+            system: AUDITOR_SYSTEM_PROMPT,
+            prompt: [
+                `A developer proposes adding \`@krusch/toolkit/xml-osis\` wrapping \`fast-xml-parser\` for OSIS Scripture chapters. \`krusch-lego scout --portable\` reports cluster \`${rejectedCluster.id}\` has \`projectCount: ${rejectedCluster.projectCount}\` (\`status: "${rejectedCluster.status}"\`, projects: \`${JSON.stringify(rejectedCluster.projects)}\`).`,
+                'Evaluate this proposal under `INV-LEGO-15` (Rule-of-3 Anti-Bloat Gate) and output a structured JSON decision.'
+            ].join('\n\n'),
+            answer: `\`\`\`json\n${JSON.stringify(
+                {
+                    verdict: 'REJECT_EXTRACTION',
+                    cluster_id: rejectedCluster.id,
+                    project_count: rejectedCluster.projectCount,
+                    rule_of_three_threshold: 3,
+                    status: 'BELOW_THRESHOLD_DO_NOT_EXTRACT',
+                    recommended_location: 'keep-project-local',
+                    rationale:
+                        'Pattern appears in fewer than 3 repositories and encodes domain-specific XML chapter parsing rather than universal cross-service infrastructure. Extracting it into @krusch/toolkit would create coupling and maintenance bloat.'
+                },
+                null,
+                2
+            )}\n\`\`\``
+        }
+    ];
+
+    return rows.map((r) => ({
+        id: r.id,
+        timestamp: nowIso,
+        source: 'lego_scout_synthesis_sft',
+        teacher_model: 'gemini-4-argon',
+        student_target: 'qwen3-coder-30b-moe:latest',
+        project: 'krusch-toolkit',
+        phase: r.phase,
+        verification_status: 'SCOUT_AND_REFEREE_VERIFIED',
+        elitist_score: 97,
+        messages: [
+            { role: 'system', content: r.system },
+            { role: 'user', content: normalizePortableSftText(r.prompt, 'toolkit') },
+            { role: 'assistant', content: normalizePortableSftText(r.answer, 'toolkit') }
         ]
     }));
 }
@@ -1169,6 +1586,204 @@ export function buildRefereeDpoPairs() {
                 ['projects/sample-service/src/server.js'],
                 'Database pool uses DATABASE_URL and SSE sets X-Accel-Buffering: no.'
             )
+        },
+        // 9. Architecture Calibration Pair (INV-LEGO-15): Rule-of-3 Anti-Bloat Gate (1 repo < 3 -> keep project-local)
+        {
+            id: 'dpo-arch-rule-of-3-anti-bloat',
+            mode: 'architecture_calibration',
+            project: 'krusch-toolkit',
+            invariant: 'INV-LEGO-15',
+            prompt: [
+                { role: 'system', content: AUDITOR_SYSTEM_PROMPT },
+                {
+                    role: 'user',
+                    content: [
+                        'Evaluate this proposed `@krusch/toolkit` expansion under `INV-LEGO-15` (Rule-of-3 Anti-Bloat Gate) and output a fenced JSON architectural verdict:',
+                        '- Proposed brick: `@krusch/toolkit/xml-osis` wrapping `fast-xml-parser` for OSIS XML chapter verses.',
+                        '- `krusch-lego scout --portable` telemetry: `cluster: "niche-xml-or-yaml"`, `projectCount: 1` (`["berean"]`), `ruleOfThreeThreshold: 3`, `status: "BELOW_THRESHOLD_DO_NOT_EXTRACT"`.'
+                    ].join('\n')
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: `\`\`\`json\n${JSON.stringify(
+                        {
+                            verdict: 'KEEP_PROJECT_LOCAL',
+                            invariant: 'INV-LEGO-15',
+                            cluster_id: 'niche-xml-or-yaml',
+                            project_count: 1,
+                            rule_of_three_threshold: 3,
+                            rationale:
+                                'Appears in only 1 repository (< 3 threshold) and encodes domain-specific OSIS XML parsing rather than universal cross-service infrastructure. Keep local in berean to prevent shared toolkit bloat.'
+                        },
+                        null,
+                        2
+                    )}\n\`\`\``
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: `\`\`\`json\n${JSON.stringify(
+                        {
+                            verdict: 'EXTRACT_SHARED_BRICK',
+                            invariant: 'INV-LEGO-01',
+                            cluster_id: 'niche-xml-or-yaml',
+                            proposed_import: '@krusch/toolkit/xml-osis',
+                            rationale:
+                                'Every parser in the monorepo should live in @krusch/toolkit in case future projects parse XML.'
+                        },
+                        null,
+                        2
+                    )}\n\`\`\``
+                }
+            ]
+        },
+        // 10. Architecture Calibration Pair (INV-LEGO-12): Thin parameterized SQL + RRF vs Heavy Codegen ORM
+        {
+            id: 'dpo-arch-thin-sql-vs-heavy-orm',
+            mode: 'architecture_calibration',
+            project: 'krusch-toolkit',
+            invariant: 'INV-LEGO-12',
+            prompt: [
+                { role: 'system', content: LEGO_ENGINEER_SYSTEM_PROMPT },
+                {
+                    role: 'user',
+                    content: [
+                        'Choose the canonical `@krusch/toolkit` database layer architecture for 9 SQLite FTS5 + Hybrid RRF services (`INV-LEGO-12`) and output a fenced JSON architectural verdict:',
+                        '- Option A: Thin zero-native-addon `@krusch/toolkit/sqlite` (`node:sqlite` `DatabaseSync` + WAL pragmas + `escapeFts5Query` + `fuseRrfResults`) and `@krusch/toolkit/pg` parameterized SQL.',
+                        '- Option B: Bundle Prisma ORM schema codegen + query engine binary inside `@krusch/toolkit`.'
+                    ].join('\n')
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: `\`\`\`json\n${JSON.stringify(
+                        {
+                            verdict: 'USE_THIN_SQL_BRICK',
+                            invariant: 'INV-LEGO-12',
+                            selected_bricks: ['@krusch/toolkit/sqlite', '@krusch/toolkit/pg'],
+                            rationale:
+                                'Built-in node:sqlite DatabaseSync with explicit WAL pragmas, deterministic escapeFts5Query, and pure fuseRrfResults requires zero native compilation, zero schema codegen build steps, and preserves transparent FTS5/pgvector SQL control.'
+                        },
+                        null,
+                        2
+                    )}\n\`\`\``
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: `\`\`\`json\n${JSON.stringify(
+                        {
+                            verdict: 'ADOPT_HEAVY_ORM',
+                            invariant: 'INV-LEGO-12',
+                            selected_bricks: ['prisma-client-codegen'],
+                            rationale:
+                                'Add Prisma schema codegen and binary query engines to @krusch/toolkit so services never write SQL queries.'
+                        },
+                        null,
+                        2
+                    )}\n\`\`\``
+                }
+            ]
+        },
+        // 11. Architecture Calibration Pair (INV-LEGO-11): Zero-Build ESM + strict .d.ts vs Premature Rust N-API Rewrite
+        {
+            id: 'dpo-arch-zero-build-dts-vs-premature-rust',
+            mode: 'architecture_calibration',
+            project: 'krusch-toolkit',
+            invariant: 'INV-LEGO-11',
+            prompt: [
+                { role: 'system', content: LEGO_ENGINEER_SYSTEM_PROMPT },
+                {
+                    role: 'user',
+                    content: [
+                        'Evaluate whether `@krusch/toolkit` HTTP, MCP, SSE, and PostgreSQL I/O bricks should be rewritten as compiled Rust N-API addons or remain zero-build Node 22 ESM + strict `.d.ts` declarations (`INV-LEGO-11`). Output a fenced JSON architectural verdict.'
+                    ].join('\n')
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: `\`\`\`json\n${JSON.stringify(
+                        {
+                            verdict: 'ZERO_BUILD_DTS',
+                            invariant: 'INV-LEGO-11',
+                            rationale:
+                                'HTTP, SSE, MCP, and pgvector orchestration are network/I/O-bound, not CPU-bound. Pure Node 22 ESM paired with tsc --strict NodeNext .d.ts declarations gives compile-time type safety with zero build steps and zero native ABI breakage across containers and Workers, reserving Rust strictly for measured CPU hotspots.'
+                        },
+                        null,
+                        2
+                    )}\n\`\`\``
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: `\`\`\`json\n${JSON.stringify(
+                        {
+                            verdict: 'REWRITE_IO_IN_RUST',
+                            invariant: 'INV-LEGO-11',
+                            rationale:
+                                'Compile all HTTP routers, SSE helpers, and MCP JSON envelopes as native Rust N-API .node binaries across every container.'
+                        },
+                        null,
+                        2
+                    )}\n\`\`\``
+                }
+            ]
+        },
+        // 12. Architecture Calibration Pair (INV-LEGO-13): Connect-Time DNS-Pinned SSRF Guard vs Naive URL Hostname Regex
+        {
+            id: 'dpo-arch-connect-time-ssrf-vs-regex',
+            mode: 'architecture_calibration',
+            project: 'krusch-toolkit',
+            invariant: 'INV-LEGO-13',
+            prompt: [
+                { role: 'system', content: AUDITOR_SYSTEM_PROMPT },
+                {
+                    role: 'user',
+                    content: [
+                        'Select the compliant SSRF defense architecture for outbound webhook/URL fetching (`INV-LEGO-13`) and output a fenced JSON architectural verdict:',
+                        '- Option A: `@krusch/toolkit/security` `safeFetch` validating canonical IPv4/IPv6/NAT64/6to4/Teredo ranges (`127.0.0.0/8`, `169.254.0.0/16`, `100.64.0.0/10`, RFC1918), enforcing connect-time `undici` `Agent` IP verification, and re-validating every `redirect: "manual"` hop.',
+                        '- Option B: Checking `!/^(localhost|127\\.|169\\.254\\.)/.test(new URL(rawUrl).hostname)` before calling `fetch(rawUrl)`.'
+                    ].join('\n')
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: `\`\`\`json\n${JSON.stringify(
+                        {
+                            verdict: 'CONNECT_TIME_SSRF_GUARD',
+                            invariant: 'INV-LEGO-13',
+                            selected_brick: '@krusch/toolkit/security',
+                            rationale:
+                                'Hostname regexes are trivially bypassed via DNS rebinding (TOCTOU), HTTP 302 redirects to http://169.254.169.254/latest/meta-data, decimal/octal IPv4, or IPv4-mapped IPv6 (::ffff:169.254.169.254). safeFetch blocks all bypasses at DNS resolution, TCP connect time, and every manual redirect hop.'
+                        },
+                        null,
+                        2
+                    )}\n\`\`\``
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: `\`\`\`json\n${JSON.stringify(
+                        {
+                            verdict: 'REGEX_URL_CHECK',
+                            invariant: 'INV-LEGO-13',
+                            rationale:
+                                'Testing url.hostname against localhost and 127. regexes before fetch(rawUrl) is sufficient to block internal requests.'
+                        },
+                        null,
+                        2
+                    )}\n\`\`\``
+                }
+            ]
         }
     ];
 }
@@ -1184,7 +1799,8 @@ export function harvestLegoAndRefereeDatasets({
     const cleanPassRows = buildCleanPassCalibrationRows(nowIso);
     const remediationRows = buildDefectRemediationRows(nowIso);
     const legoFirstRows = buildLegoFirstSynthesisRows(nowIso);
-    const allSftRows = [...cleanPassRows, ...remediationRows, ...legoFirstRows];
+    const legoScoutRows = buildLegoScoutSynthesisRows(nowIso);
+    const allSftRows = [...cleanPassRows, ...remediationRows, ...legoFirstRows, ...legoScoutRows];
 
     const dpoPairs = buildRefereeDpoPairs();
 
@@ -1194,7 +1810,7 @@ export function harvestLegoAndRefereeDatasets({
     return {
         ok: true,
         tool: 'harvestLegoAndRefereeDatasets',
-        summary: `Harvested ${allSftRows.length} SFT rows (${cleanPassRows.length} CLEAN_PASS, ${remediationRows.length} remediations, ${legoFirstRows.length} Lego-First) and ${dpoPairs.length} balanced DPO pairs`,
+        summary: `Harvested ${allSftRows.length} SFT rows (${cleanPassRows.length} CLEAN_PASS, ${remediationRows.length} remediations, ${legoFirstRows.length} Lego-First, ${legoScoutRows.length} Lego-Scout) and ${dpoPairs.length} balanced DPO pairs`,
         data: {
             sftOutPath,
             dpoOutPath,
@@ -1203,9 +1819,11 @@ export function harvestLegoAndRefereeDatasets({
                 cleanPass: cleanPassRows.length,
                 remediations: remediationRows.length,
                 legoFirst: legoFirstRows.length,
+                legoScout: legoScoutRows.length,
                 dpoTotal: dpoPairs.length,
                 dpoPrecision: dpoPairs.filter((p) => p.mode === 'precision').length,
-                dpoRecall: dpoPairs.filter((p) => p.mode === 'recall').length
+                dpoRecall: dpoPairs.filter((p) => p.mode === 'recall').length,
+                dpoArchitecture: dpoPairs.filter((p) => p.mode === 'architecture_calibration').length
             }
         }
     };

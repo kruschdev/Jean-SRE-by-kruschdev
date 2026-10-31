@@ -4,6 +4,8 @@ import fs from 'fs';
 import pg from 'pg';
 import { loadProjectConfig, envOr } from '@krusch/toolkit/config';
 import { resolveModelConfig } from '@krusch/toolkit/llm';
+import { scoutHomelabLegoCandidates } from '@krusch/toolkit/lego-scout';
+import { auditBoilerplateText } from '@krusch/toolkit/catalog';
 import { fileURLToPath } from 'url';
 import { dirname, join, extname, basename } from 'path';
 import os from 'os';
@@ -246,6 +248,7 @@ const INFRA_INTERVAL = 5; // Trigger infra sweep every 5th project completion
 const INFRA_TARGETS = [
     { node: 'krusch', focus: 'homelab_hygiene' },     // Stale folders, dead prototypes, duplicate skills, orphaned DBs
     { node: 'kruschdev', focus: 'homelab_hygiene' },  // Stale folders, unreferenced projects, & monorepo drift
+    { node: 'kruschdev', focus: 'lego_scout' },       // Cross-repo @krusch/toolkit adoption & Rule-of-3 candidate scouting
     { node: 'kruschserv', focus: 'docker' },          // Docker images, volumes, compose configs
     { node: 'kruschserv', focus: 'disk' },            // Disk usage, large files, old backups
     { node: 'kruschserv', focus: 'system_tuning' },   // Kernel, mounts, Docker daemon, network
@@ -2737,6 +2740,123 @@ function loadDistilledTeacherBrief(projectPath, maxChars = 850) {
     }
 }
 
+function buildLegoScoutContextBrief(homelabRoot = HOMELAB_ROOT, options = {}) {
+    try {
+        const projectsDir = options.projectsRoot || join(homelabRoot, 'projects');
+        if (!fs.existsSync(projectsDir)) return '';
+        const res = scoutHomelabLegoCandidates(projectsDir, {
+            minProjects: options.minProjects ?? 3,
+            portablePaths: true
+        });
+        if (!res?.ok || !res?.data) return '';
+        const d = res.data;
+        const lines = [
+            `**🧱 Cross-Repository Lego Scout Ground Truth (\`krusch-lego scout --portable\` — Rule-of-${d.ruleOfThreeThreshold}, gated by \`/jean-loop-gate\`):**`,
+            `- **Scanned:** \`${d.scannedProjects}\` projects (\`${d.scannedFilesTotal}\` production source files)`,
+            `- **1. Immediate Toolkit Adoption Targets (\`LEGO-ADOPT\`):** \`${d.adoptionFindings.length}\` project(s)`
+        ];
+        for (const f of d.adoptionFindings.slice(0, 6)) {
+            lines.push(
+                `  - \`${f.project}\` (${f.findingCount} hit(s)): [\`${f.rulesTriggered.join('`, `')}\`] → \`${f.recommendedBricks.join('`, `')}\` (\`${f.sampleFiles[0] || f.project}\`)`
+            );
+        }
+        const covered = d.candidateClusters.filter((c) => c.status === 'ALREADY_COVERED_IN_TOOLKIT');
+        if (covered.length > 0) {
+            lines.push(`- **2. Covered Wave-3 Toolkit Patterns (\`ALREADY_COVERED_IN_TOOLKIT\`):**`);
+            for (const c of covered) {
+                lines.push(
+                    `  - \`${c.id}\` (\`${c.projectCount}\` repos) → \`${c.proposedBrickImport}\` | repos: ${c.projects.slice(0, 5).join(', ')}`
+                );
+            }
+        }
+        const candidates = d.candidateClusters.filter((c) => c.status === 'CANDIDATE_MEETS_RULE_OF_3');
+        if (candidates.length > 0) {
+            lines.push(
+                `- **3. Candidate Bricks Meeting Rule-of-${d.ruleOfThreeThreshold} (\`CANDIDATE_MEETS_RULE_OF_3\` — propose spec under \`/jean-loop-gate\`):**`
+            );
+            for (const c of candidates) {
+                lines.push(
+                    `  - \`${c.id}\` (\`${c.projectCount}\` repos >= ${d.ruleOfThreeThreshold}) → \`${c.proposedBrickImport}\` | repos: ${c.projects.slice(0, 5).join(', ')} | sample: \`${c.sampleEvidence[0] || ''}\``
+                );
+            }
+        }
+        const rejected = d.candidateClusters.filter((c) => c.status === 'BELOW_THRESHOLD_DO_NOT_EXTRACT');
+        if (rejected.length > 0) {
+            lines.push(
+                `- **4. Anti-Bloat Rejected Patterns (\`BELOW_THRESHOLD_DO_NOT_EXTRACT\` — \`< ${d.ruleOfThreeThreshold}\` repos, DO NOT EXTRACT):**`
+            );
+            for (const c of rejected) {
+                lines.push(
+                    `  - \`${c.id}\` (\`${c.projectCount}\` repo(s) < ${d.ruleOfThreeThreshold}) → \`${c.proposedBrickImport}\` (repos: ${c.projects.join(', ')}) — keep project-local.`
+                );
+            }
+        }
+        return lines.join('\n').slice(0, options.maxChars ?? 4200);
+    } catch {
+        return '';
+    }
+}
+
+function buildProjectLegoBoilerplateBrief(projectPath, maxFiles = 24) {
+    try {
+        if (!projectPath || !fs.existsSync(projectPath)) return '';
+        const base = basename(projectPath);
+        if (['lib', 'lib-py', 'krusch-stack', '.agent', 'configs', 'scripts'].includes(base)) return '';
+        const candidates = listProjectFiles(projectPath)
+            .filter(
+                (rel) =>
+                    /\.(?:js|mjs|ts|tsx|jsx|py)$/i.test(rel) &&
+                    !/(?:^|\/)(?:test|tests|__tests__|docs|benchmarks|examples|scratch|archive)\b|\.(?:test|spec)\./i.test(rel)
+            )
+            .slice(0, maxFiles);
+        const hits = [];
+        for (const rel of candidates) {
+            if (hits.length >= 6) break;
+            const abs = join(projectPath, rel);
+            let stat;
+            try {
+                stat = fs.statSync(abs);
+            } catch {
+                continue;
+            }
+            if (!stat.isFile() || stat.size > 196_608) continue;
+            const code = fs.readFileSync(abs, 'utf8');
+            const audit = auditBoilerplateText(code, rel);
+            for (const finding of audit?.data?.findings || []) {
+                hits.push(`- \`${rel}\`: \`${finding.ruleId}\` → migrate to \`${finding.importPath || finding.brickId}\` (${finding.message})`);
+                if (hits.length >= 6) break;
+            }
+        }
+        if (hits.length === 0) return '';
+        return [
+            `**🧱 @krusch/toolkit Boilerplate Audit (\`INV-LEGO-01\` — deterministic static hits):**`,
+            ...hits
+        ].join('\n');
+    } catch {
+        return '';
+    }
+}
+
+async function appendLegoScoutBacklogEntry(cleanupPath, infraTarget, reply, nowIso = new Date().toISOString()) {
+    const cleanReply = String(reply || '').trim();
+    if (!cleanReply || /^NO_FINDINGS$/i.test(cleanReply)) return false;
+    const header = !fs.existsSync(cleanupPath)
+        ? `# 🧹 Jean SRE — Homelab Staleness & Cleanup Backlog\n> Auto-compiled from whole-homelab audits (\`@homelab/*\` & \`projects/*\`).\n\n`
+        : '';
+    const entry = [
+        `## 🧱 Lego Scout (${infraTarget?.node || 'kruschdev'}/${infraTarget?.focus || 'lego_scout'}) — ${nowIso}`,
+        `> **Governance:** Gated via \`/jean-loop-gate\` & \`/spec-first-refactor\` (Rule-of-3 anti-bloat threshold enforced).`,
+        ``,
+        cleanReply,
+        ``,
+        `---`,
+        ``
+    ].join('\n');
+    await fs.promises.appendFile(cleanupPath, `${header}${entry}`, 'utf8');
+    ensureHostWritable(cleanupPath);
+    return true;
+}
+
 function buildProjectAuditContext(projectPath, phase, inflightBlock = '', options = {}) {
     const isColabBurst = Boolean(options.isColabBurst);
     const sections = [];
@@ -2785,6 +2905,14 @@ function buildProjectAuditContext(projectPath, phase, inflightBlock = '', option
         const baselineRules = loadHomelabBaselineRules(projectPath);
         if (baselineRules) {
             sections.push(`**Homelab Baseline Engineering Rubric (\`.agent/rules/\` — evaluate project compliance alongside local project docs):**\n${baselineRules.slice(0, isColabBurst ? 2400 : 1800)}`);
+        }
+    }
+
+    // Inject deterministic @krusch/toolkit boilerplate hints in anti-pattern & synthesis phases
+    if (['1.2_COMPLIANCE_MATRIX', '1.5_ANTI_PATTERN', '2_MASTER_BACKLOG'].includes(phase)) {
+        const legoBrief = buildProjectLegoBoilerplateBrief(projectPath);
+        if (legoBrief) {
+            sections.push(legoBrief);
         }
     }
 
@@ -3622,7 +3750,12 @@ YOU MUST EXCLUSIVELY FOCUS ON REMEDIATING AND TRIAGING THIS INCIDENT.
 Select Sentinel tools to analyze the health of the target node and identify any system or docker anomalies. Formulate clear remediation intents.`;
                 }
                 const infraSkillPlaybook = loadJeanSkillPlaybook('infra');
-                const infraCycleContext = [cycleContext, infraSkillPlaybook ? `**Active Infra Skill Playbook (\`/jean-self-healing-infra\`):**\n${infraSkillPlaybook}` : ''].filter(Boolean).join('\n\n');
+                const legoScoutBrief = infraTarget.focus === 'lego_scout' ? buildLegoScoutContextBrief(HOMELAB_ROOT) : '';
+                const infraCycleContext = [
+                    cycleContext,
+                    legoScoutBrief,
+                    infraSkillPlaybook ? `**Active Infra Skill Playbook (\`/jean-self-healing-infra\`):**\n${infraSkillPlaybook}` : ''
+                ].filter(Boolean).join('\n\n');
                 const infraThinkerPrompt = buildInfraThinkerPrompt(infraCycleContext, inflight.block, infraTarget, infraDriftWarning);
                 const infraThinkerReply = await sendToAgent(infraThinkerPrompt, { noTools: true });
                 console.log(`[Sweep ${cycle}] Thinker produced ${infraThinkerReply.length} chars`);
@@ -3679,6 +3812,18 @@ Select Sentinel tools to analyze the health of the target node and identify any 
                     console.log(`[Sweep ${cycle}] Dispatched ${infraDispatched.length}/${infraParsedIntents.length} jobs (${infraParsedIntents.length - novelIntents.length} blocked by drift gate)`);
                 }
 
+                if (legoScoutBrief) {
+                    infraDispatched = [
+                        {
+                            job_id: 'lego-sct0',
+                            status: 'completed',
+                            command: 'krusch-lego scout <HOMELAB_ROOT>/projects --portable',
+                            output: legoScoutBrief
+                        },
+                        ...infraDispatched
+                    ];
+                }
+
                 // Step 3: IMPLEMENTER (infra-specific synthesis)
                 console.log(`[Sweep ${cycle}] Step 3: IMPLEMENTER (infra report synthesis)...`);
                 const infraImplementerPrompt = buildInfraImplementerPrompt(infraThinkerReply, infraDispatched, inflight.block, infraTarget, infraParsedIntents);
@@ -3688,6 +3833,14 @@ Select Sentinel tools to analyze the health of the target node and identify any 
                 await persistInflight(infraImplementerReply, cycle);
                 await extractAndSaveLessons(infraImplementerReply, 'jean-sre');
                 await logInfraCycle(cycle, `INFRA-REPORT (${infraTarget.node}/${infraTarget.focus})`, infraImplementerPrompt, infraImplementerReply);
+                if (infraTarget.focus === 'lego_scout') {
+                    try {
+                        await appendLegoScoutBacklogEntry('jean_homelab_cleanup_backlog.md', infraTarget, infraImplementerReply);
+                        console.log(`[LegoScout] 🧱 Appended Rule-of-3 Lego Scout report to jean_homelab_cleanup_backlog.md`);
+                    } catch (e) {
+                        console.warn(`[LegoScout] Failed to append to jean_homelab_cleanup_backlog.md:`, e.message);
+                    }
+                }
 
                 // Clean active emergency if it was processed
                 if (activeEmergency) {
@@ -4024,7 +4177,11 @@ export {
     CORE_PROJECTS,
     HOMELAB_ROOT_TARGETS,
     PROJECT_ROTATION,
+    INFRA_TARGETS,
     discoverUncuratedProjects,
+    buildLegoScoutContextBrief,
+    buildProjectLegoBoilerplateBrief,
+    appendLegoScoutBacklogEntry,
     computeProjectSourceSignature,
     markProjectConverged,
     isProjectConverged,

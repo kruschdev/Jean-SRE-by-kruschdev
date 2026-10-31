@@ -89,8 +89,13 @@ export function scoreElitistTrajectory(row) {
         row.source === 'referee_clean_pass_calibration' ||
         (/"verdict"\s*:\s*"CLEAN_PASS"/.test(assistant) && /"findings"\s*:\s*\[\s*\]/.test(assistant));
     const isLegoFirstSft =
-        row.source === 'lego_first_sft' || /@krusch\/toolkit\/|krusch_toolkit\./.test(assistant);
-    const minAssistantChars = isCalibratedCleanPass || row.source === 'lego_first_sft' ? 120 : 400;
+        row.source === 'lego_first_sft' ||
+        row.source === 'lego_scout_synthesis_sft' ||
+        /@krusch\/toolkit\/|krusch_toolkit\./.test(assistant);
+    const minAssistantChars =
+        isCalibratedCleanPass || row.source === 'lego_first_sft' || row.source === 'lego_scout_synthesis_sft'
+            ? 120
+            : 400;
     if (assistant.length < minAssistantChars) return 0;
 
     let score = 0;
@@ -98,7 +103,7 @@ export function scoreElitistTrajectory(row) {
     if (row.source === 'argon_golden_remediation' || String(row.teacher_model || '').includes('argon')) {
         score += 10;
     }
-    // 2. Calibrated CLEAN_PASS verdicts & Lego-First toolkit assembly get explicit positive weight
+    // 2. Calibrated CLEAN_PASS verdicts & Lego-First / Lego-Scout toolkit assembly get explicit positive weight
     if (isCalibratedCleanPass) {
         score += 6;
     }
@@ -116,13 +121,14 @@ export function scoreElitistTrajectory(row) {
     if (codeBlocks.length >= 2) score += 2;
     else if (codeBlocks.length === 1) score += 1;
 
-    // 5. Structured audit IDs / explicit refutations / invariant checks (INV-12, INV-LEGO-01, INV-STACK-04)
-    if (/\[(?:BUG|SEC|PERF|ARCH|TEST|SRE)-\d+\]/.test(assistant)) score += 2;
+    // 5. Structured audit IDs / explicit refutations / invariant checks (INV-12, INV-LEGO-01..16, LEGO-01)
+    if (/\[(?:BUG|SEC|PERF|ARCH|TEST|SRE|LEGO)-\d+\]|#{3,4}\s+LEGO-\d+/.test(assistant)) score += 2;
     if (/\b(?:REFUTED|VERIFIED|CLEAN_PASS|INV-(?:[A-Z]+-)?\d+)\b/.test(assistant)) score += 2;
 
-    // 6. Downweight legacy hand-rolled DB/SSE boilerplate when @krusch/toolkit equivalents are absent
+    // 6. Downweight legacy hand-rolled DB/SQLite/SSE boilerplate when @krusch/toolkit equivalents are absent
     if (
         (/\bnew\s+(?:pg\.)?Pool\s*\(/.test(assistant) && !/@krusch\/toolkit\/pg|INV-LEGO/.test(assistant)) ||
+        (/\bnew\s+DatabaseSync\s*\(/.test(assistant) && !/@krusch\/toolkit\/sqlite|INV-LEGO/.test(assistant)) ||
         (/text\/event-stream/.test(assistant) && /res\.writeHead/.test(assistant) && !/@krusch\/toolkit\/streaming|INV-LEGO/.test(assistant))
     ) {
         score = Math.max(0, score - 2);
