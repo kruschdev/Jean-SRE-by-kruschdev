@@ -127,5 +127,20 @@ describe('Jean SRE In-Memory Fallback Cache & Eviction (ARCH-01 / TEST-01)', () 
         const fallback = await loadSafeHarnessConfig('/tmp/empty', async () => ({}));
         assert.deepStrictEqual(fallback, DEFAULT_HARNESS_CONFIG);
     });
+
+    test('Lego Rule (INV-LEGO-01): src/db.js, src/jean_sre_sweep.js, and scripts/verify_context.js use createPgPool with zero raw-pg-pool findings', async () => {
+        const fsMod = await import('node:fs');
+        const pathMod = await import('node:path');
+        const urlMod = await import('node:url');
+        const { auditBoilerplateText } = await import('../../../lib/catalog.js');
+        const rootDir = pathMod.resolve(pathMod.dirname(urlMod.fileURLToPath(import.meta.url)), '..');
+        for (const rel of ['src/db.js', 'src/jean_sre_sweep.js', 'scripts/verify_context.js']) {
+            const absPath = pathMod.join(rootDir, rel);
+            const audit = auditBoilerplateText(fsMod.readFileSync(absPath, 'utf8'), absPath);
+            assert.strictEqual(audit.ok, true);
+            assert.strictEqual(audit.data.clean, true, `${rel}: ${JSON.stringify(audit.data.findings)}`);
+        }
+    });
 });
+
 

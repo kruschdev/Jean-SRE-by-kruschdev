@@ -1,9 +1,9 @@
-import pg from 'pg';
 import { createHash } from 'crypto';
 import { envOr } from '@krusch/toolkit/config';
+import { createPgPool } from '@krusch/toolkit/pg';
 
 const DATABASE_URL = envOr('DBOS_DATABASE_URL', envOr('DATABASE_URL', null, null), null);
-export const pool = DATABASE_URL ? new pg.Pool({ connectionString: DATABASE_URL, max: 6, idleTimeoutMillis: 30000 }) : null;
+export const pool = DATABASE_URL ? createPgPool(DATABASE_URL, { serviceName: 'jean-sre-harness', max: 6, idleTimeoutMillis: 30000 }) : null;
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const MAX_MEMORY_ENTRIES = 100;

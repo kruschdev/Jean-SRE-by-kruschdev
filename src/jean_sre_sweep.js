@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'crypto';
 import { execSync } from 'child_process';
 import fs from 'fs';
-import pg from 'pg';
+import { createPgPool } from '@krusch/toolkit/pg';
 import { loadProjectConfig, envOr } from '@krusch/toolkit/config';
 import { resolveModelConfig } from '@krusch/toolkit/llm';
 import { scoutHomelabLegoCandidates } from '@krusch/toolkit/lego-scout';
@@ -76,14 +76,14 @@ process.on('SIGUSR1', () => {
 const AGENT_URL = envOr('JEAN_AGENT_URL', null, 'http://localhost:3005');
 const DBOS_DATABASE_URL = envOr('DBOS_DATABASE_URL');
 const DISCORD_WEBHOOK_URL = envOr('DISCORD_WEBHOOK_URL', null, null);
-const dbPool = DBOS_DATABASE_URL ? new pg.Pool({
-    connectionString: DBOS_DATABASE_URL,
-    max: 5,
-    idleTimeoutMillis: 30000
-}) : null;
-if (dbPool) {
-    dbPool.on('error', (err) => console.error('[Sweep DB Pool] Idle client error:', err.message));
-}
+const dbPool = DBOS_DATABASE_URL
+    ? createPgPool(DBOS_DATABASE_URL, {
+        serviceName: 'jean-sre-sweep',
+        max: 5,
+        idleTimeoutMillis: 30000
+    })
+    : null;
+// Idle client error listener is attached automatically by createPgPool (@krusch/toolkit/pg)
 
 async function sendDiscordAlert(message) {
     if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL === 'your_discord_webhook_url_here') return;
