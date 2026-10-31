@@ -50,20 +50,22 @@ All accept { node: 'krusch' | 'kruschdev' | 'kruschserv' }
 6. **krusch-context (Tier 1 Working Memory & Invariant Steering)**:
    - krusch_context_retrieve, krusch_context_remember, krusch_context_revise, krusch_context_nudge, krusch_context_health
 
-### Shared Lego Toolkits & Rule-of-3 Governance (@krusch/toolkit v1.5 & krusch_toolkit v1.3, INV-LEGO-01..16)
+### Shared Lego Toolkits & Rule-of-3 Governance (@krusch/toolkit v1.6 & krusch_toolkit v1.4, INV-LEGO-01..20)
 - **@krusch/toolkit/http**: createApiServer, createExpressBricks, readBoundedJsonBody, createCorsHeaders, okEnvelope, errorEnvelope, asyncHandler, attachGracefulShutdown
 - **@krusch/toolkit/streaming**: sseResponse, streamChat
 - **@krusch/toolkit/mcp**: defineMcpTool, createMcpServer, okMcpResult, errorMcpResult, validateToolArgs
 - **@krusch/toolkit/pg**: createPgPool, runSqlMigrations, pgVectorSearch, buildPgConnectionString, assertSafePgIdentifier
 - **@krusch/toolkit/sqlite** & **@krusch/toolkit/db**: openSqliteDb, escapeFts5Query, fuseRrfResults (INV-LEGO-12 zero-native-addon node:sqlite WAL + FTS5 + Hybrid RRF); initDb, query, queryOne, run, transaction, isSqliteCorruptionError
 - **@krusch/toolkit/security**: safeFetch, validateOutboundUrl, isPrivateOrReservedIp, createRateLimiter (INV-LEGO-13 DNS-pinned SSRF guard & bounded 429 rate limiter)
+- **@krusch/toolkit/schema** & **@krusch/toolkit/upload**: s, toJsonSchema, validateSchema, validatePayload, createSchemaMiddleware (INV-LEGO-17 isomorphic schema & Zod/MCP compiler); sanitizeUploadFilename, sniffMimeMagic, verifyUploadMime, parseBoundedMultipart (INV-LEGO-18 stream-draining multipart & magic-byte MIME guard)
+- **@krusch/toolkit/cascade** & **@krusch/toolkit/audio**: DEFAULT_FLEET_CASCADE_TIERS, createTierCircuitBreaker, selectCascadeTier, probeBurstEndpoint, executeWithCascadeFallback (INV-LEGO-19 <25us tier selector & HALF_OPEN circuit breaker); encodeWavPcm16, parseWavHeader, transcribeWhisperAudio, synthesizeSpeechAudio (INV-LEGO-20 WAV/Whisper/TTS)
 - **@krusch/toolkit/react**: cn, STYLES, useAesthetics, fetchApiJson, useApiQuery, useSSEStream, AppShell, StatusPill, MetricCard, StreamingChatPanel, ErrorBoundary
 - **@krusch/toolkit/edge** / **@krusch/toolkit/webhooks** / **@krusch/toolkit/cli**: createEdgeRouter, edgeSseResponse, createEdgeKvJsonStore, readBoundedEdgeJson (zero node:*); verifySlackSignature, verifyGithubSignature, verifyStripeSignature, verifyBearerToken, signWebhookHmac, constantTimeEqual; withSingleInstanceLock, attachDaemonSignals, appendJsonlRecord, defineCli
 - **@krusch/toolkit/catalog** / **@krusch/toolkit/scaffold** / **@krusch/toolkit/lego-scout**: listLegoBricks, listArchetypes, auditBoilerplateText, scaffoldProject, scoutHomelabLegoCandidates (krusch-lego list | inspect | stamp | audit | scout)
-- **krusch_toolkit (Python v1.3)**: krusch_toolkit.fastapi_app (create_fastapi_app, ok_envelope, error_envelope, sse_event_response), krusch_toolkit.mcp (define_mcp_tool, dispatch_mcp_tool, ok_mcp_result, error_mcp_result), krusch_toolkit.pg (run_sql_migrations, pg_vector_search), krusch_toolkit.security (verify_webhook_hmac, verify_bearer_token, validate_outbound_url, is_private_or_reserved_ip)
-- **Rule-of-3 Gate (INV-LEGO-15..16)**:
-  - **Immediate LEGO-ADOPT (shipped in v1.5 / Python v1.3 ONLY)**: Migrate directly ONLY to shipped bricks listed above (@krusch/toolkit/sqlite, @krusch/toolkit/security, @krusch/toolkit/http, @krusch/toolkit/mcp, @krusch/toolkit/pg, @krusch/toolkit/streaming, @krusch/toolkit/react, @krusch/toolkit/edge, @krusch/toolkit/webhooks, @krusch/toolkit/cli).
-  - **Wave-4 CANDIDATE_MEETS_RULE_OF_3 (unbuilt — propose via /jean-loop-gate + /spec-first-refactor, do NOT import yet)**: Recurring patterns shared across >= 3 repos that are NOT yet in @krusch/toolkit v1.5 (such as Zod/Ajv schema validation -> proposed @krusch/toolkit/schema, multipart uploads -> @krusch/toolkit/upload, cascade routing -> @krusch/toolkit/cascade, Whisper/TTS -> @krusch/toolkit/audio).
+- **krusch_toolkit (Python v1.4)**: krusch_toolkit.fastapi_app (create_fastapi_app, ok_envelope, error_envelope, sse_event_response), krusch_toolkit.mcp (define_mcp_tool, dispatch_mcp_tool, ok_mcp_result, error_mcp_result), krusch_toolkit.pg (run_sql_migrations, pg_vector_search), krusch_toolkit.security (verify_webhook_hmac, verify_bearer_token, validate_outbound_url, is_private_or_reserved_ip), krusch_toolkit.schema (validate_json_schema, validate_payload), krusch_toolkit.upload (sanitize_upload_filename, sniff_mime_magic, verify_upload_mime, read_bounded_upload)
+- **Rule-of-3 Gate (INV-LEGO-15..20)**:
+  - **Immediate LEGO-ADOPT (shipped in v1.6 / Python v1.4 — 30 bricks ONLY)**: Migrate directly ONLY to shipped bricks listed above (@krusch/toolkit/sqlite, @krusch/toolkit/security, @krusch/toolkit/schema, @krusch/toolkit/upload, @krusch/toolkit/cascade, @krusch/toolkit/audio, @krusch/toolkit/http, @krusch/toolkit/mcp, @krusch/toolkit/pg, @krusch/toolkit/streaming, @krusch/toolkit/react, @krusch/toolkit/edge, @krusch/toolkit/webhooks, @krusch/toolkit/cli, krusch_toolkit.{fastapi_app,mcp,pg,security,schema,upload}).
+  - **Wave-5 CANDIDATE_MEETS_RULE_OF_3 (unbuilt — propose via /jean-loop-gate + /spec-first-refactor, do NOT import yet)**: Recurring patterns shared across >= 3 repos that are NOT yet in @krusch/toolkit v1.6 / krusch_toolkit v1.4 (such as Python async httpx retry/envelope wrappers -> proposed krusch_toolkit.http_client, Streamlit RAG citation shells -> proposed krusch_toolkit.streamlit_ui).
   - **Reject BELOW_THRESHOLD_DO_NOT_EXTRACT (keep-project-local)**: Any pattern used in < 3 repos or single-domain utilities (e.g., fast-xml-parser in 2 repos).
 `;
 
@@ -193,7 +195,7 @@ Compile ONLY the verified, evidence-backed findings from Phases 1.1–1.9 into a
   - **Source Audit:** [e.g. 1.3, 1.5, 1.7, 1.8]
   - **Why It Matters:** [1–2 sentences of concrete impact]
   - **Fix Instructions:** [2–3 concrete steps]
-- **Lego Toolkit Adoption (\`LEGO-01\`)**: Flag production files that hand-roll HTTP/Express setup, SSE headers, MCP stdio servers, raw \`pg.Pool\` / \`DatabaseSync\` handles, SSRF/rate-limit middleware, or un-aborted React \`fetch\` hooks instead of importing \`@krusch/toolkit/*\` v1.5 or \`krusch_toolkit.*\` v1.3 (\`INV-LEGO-01\`).
+- **Lego Toolkit Adoption (\`LEGO-01\`)**: Flag production files that hand-roll HTTP/Express setup, SSE headers, MCP stdio servers, raw \`pg.Pool\` / \`DatabaseSync\` handles, \`multer\` uploads, manual payload schema validators, SSRF/rate-limit middleware, or un-aborted React \`fetch\` hooks instead of importing \`@krusch/toolkit/*\` v1.6 or \`krusch_toolkit.*\` v1.4 (\`INV-LEGO-01..20\`).
 - **Staleness & Cleanup Triage (\`STALE-01\`)**: Flag dead scripts, one-off demo files (e.g. \`demo_*.js\`), orphaned test DBs (\`*.db\`), duplicate configs/skills, or superseded prototypes that should be deleted, archived, or consolidated into \`@krusch/toolkit\`.
 - End with \`### 1. SUMMARY TABLE\`, \`### 2. RECOMMENDED BATCHES\`, \`### 3. OPEN QUESTIONS\`, \`### 4. NOT FLAGGED\`, and \`### 5. STALENESS & ARCHIVAL VERDICT\` (classifying the target as \`🟢 ACTIVE_CORE\`, \`🟡 CONSOLIDATE_OR_PRUNE\`, or \`🔴 ARCHIVE_CANDIDATE\` with concrete cleanup actions).
 
@@ -365,15 +367,15 @@ Classify every stale finding into:
 - 🔵 **Consolidate into @krusch/toolkit or .agent/skills** (duplicate root skills/ vs .agent/skills/, standalone scripts in lib/ like demo_*.js)`;
 
         case 'lego_scout':
-            return `**Goal**: Scout cross-repository \`@krusch/toolkit\` v1.5 (\`24\` JS/TS bricks) & \`krusch_toolkit\` v1.3 (Python) adoption opportunities and Rule-of-3 candidate bricks across \`~/homelab/projects/\` WITHOUT bloating the shared toolkit.
+            return `**Goal**: Scout cross-repository \`@krusch/toolkit\` v1.6 (\`30\` runtime bricks) & \`krusch_toolkit\` v1.4 (Python) adoption opportunities and Rule-of-3 candidate bricks across \`~/homelab/projects/\` WITHOUT bloating the shared toolkit.
 The deterministic \`krusch-lego scout --portable\` Ground-Truth telemetry is pre-loaded in **Previous Context** above. Cross-verify specific sample files via read-only tools before recommending action:
 
-1. sentinel: read_remote_file({ node: '${node}', path: '/home/agent/homelab/lib/spec.md' }) — verify frozen \`INV-LEGO-01..16\` contracts and existing brick exports
-2. krusch-fs: krusch_fs_search({ query: '@krusch/toolkit DatabaseSync pg.Pool safeFetch', node: '${node}', category: 'all' }) — cross-reference indexed boilerplate hotspots and page-anchored warnings
+1. sentinel: read_remote_file({ node: '${node}', path: '/home/agent/homelab/lib/spec.md' }) — verify frozen \`INV-LEGO-01..20\` contracts and existing brick exports
+2. krusch-fs: krusch_fs_search({ query: '@krusch/toolkit DatabaseSync pg.Pool safeFetch multer', node: '${node}', category: 'all' }) — cross-reference indexed boilerplate hotspots and page-anchored warnings
 3. sentinel: read_remote_file({ node: '${node}', path: '/home/agent/homelab/lib/catalog.js' }) — inspect current \`RUNTIME_BRICKS\` and \`auditBoilerplateText\` rules
 
 Separate every finding strictly under the **Human-Agent SRE Loop Gate (\`/jean-loop-gate\`)**:
-- 🔴 **Immediate (\`LEGO-ADOPT\`)**: Repositories hand-rolling boilerplate ALREADY covered by \`@krusch/toolkit\` v1.5 (\`./http\`, \`./streaming\`, \`./mcp\`, \`./pg\`, \`./sqlite\`, \`./security\`, \`./edge\`, \`./webhooks\`, \`./cli\`, \`./react\`) or \`krusch_toolkit\` v1.3 (\`fastapi_app\`, \`mcp\`, \`pg\`, \`security\`). Cite exact project counts and sample files.
+- 🔴 **Immediate (\`LEGO-ADOPT\`)**: Repositories hand-rolling boilerplate ALREADY covered by \`@krusch/toolkit\` v1.6 (\`./http\`, \`./streaming\`, \`./mcp\`, \`./pg\`, \`./sqlite\`, \`./security\`, \`./schema\`, \`./upload\`, \`./cascade\`, \`./audio\`, \`./edge\`, \`./webhooks\`, \`./cli\`, \`./react\`) or \`krusch_toolkit\` v1.4 (\`fastapi_app\`, \`mcp\`, \`pg\`, \`security\`, \`schema\`, \`upload\`). Cite exact project counts and sample files.
 - 🟡 **Review Required (\`LEGO-CANDIDATE\` — Rule-of-3 Gate \`>= 3\` Projects ONLY)**: Recurring infrastructure patterns with \`CANDIDATE_MEETS_RULE_OF_3\` (\`projectCount >= 3\`). Propose exact subpath export, thin function signatures, and \`{ ok, tool, summary, data | error }\` (\`INV-LEGO-01\`) contract for human \`/spec-first-refactor\` review while keeping domain business logic project-local.
 - 🟢 **Clean / Anti-Bloat Rejected (\`BELOW_THRESHOLD_DO_NOT_EXTRACT\`)**: Explicitly list \`< 3\`-repository patterns (\`keep-project-local\`) that MUST NOT be extracted into \`@krusch/toolkit\` so the library never becomes a kitchen-sink junk drawer.`;
 
