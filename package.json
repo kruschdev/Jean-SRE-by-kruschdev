@@ -7,6 +7,8 @@
   "scripts": {
     "test": "node --test tests/*.test.js src/sweep.test.js",
     "start": "node src/harness.js",
-    "sweep": "node src/jean_sre_sweep.js"
+    "sweep": "node src/jean_sre_sweep.js",
+    "harvest-sft": "node scripts/harvest_lego_and_referee_calibration.js",
+    "build-sft": "node scripts/build_public_sft_release.js"
   }
 }

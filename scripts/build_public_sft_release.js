@@ -17,6 +17,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizePortableSftText } from '../src/harness.js';
 import { exportElitist120bDataset } from './export-120b-distillation.js';
+import {
+    harvestLegoAndRefereeDatasets,
+    LEGO_CALIBRATION_SFT_PATH,
+    REFEREE_DPO_PATH
+} from './harvest_lego_and_referee_calibration.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -105,6 +110,51 @@ function sanitizeJsonlFileInPlace(filePath) {
     return { total: sanitizedRows.length, rows: sanitizedRows };
 }
 
+function normalizeDpoTurnList(turnOrStr, proj, defaultRole = 'assistant') {
+    if (Array.isArray(turnOrStr)) {
+        return turnOrStr.map((m) => ({
+            role: wellFormed(m.role, defaultRole),
+            content: wellFormed(normalizePortableSftText(String(m.content || ''), proj))
+        }));
+    }
+    return [
+        {
+            role: defaultRole,
+            content: wellFormed(normalizePortableSftText(String(turnOrStr || ''), proj))
+        }
+    ];
+}
+
+function sanitizeDpoFileInPlace(filePath) {
+    if (!fs.existsSync(filePath)) return { total: 0, rows: [] };
+    const lines = fs.readFileSync(filePath, 'utf8').split('\n').filter(Boolean);
+    const sanitizedRows = [];
+    for (let i = 0; i < lines.length; i++) {
+        try {
+            const row = JSON.parse(lines[i]);
+            const proj = row.project || 'toolkit';
+            const prompt = normalizeDpoTurnList(row.prompt, proj, 'user');
+            sanitizedRows.push({
+                id: wellFormed(row.id, `dpo-${i}`),
+                mode: wellFormed(row.mode, 'precision'),
+                project: wellFormed(proj, 'toolkit'),
+                invariant: wellFormed(row.invariant, 'INV-LEGO-01'),
+                prompt,
+                chosen: normalizeDpoTurnList(row.chosen, proj, 'assistant'),
+                rejected: normalizeDpoTurnList(row.rejected, proj, 'assistant')
+            });
+        } catch {
+            // Skip malformed JSON line
+        }
+    }
+    fs.writeFileSync(
+        filePath,
+        sanitizedRows.map((r) => JSON.stringify(r)).join('\n') + '\n',
+        'utf8'
+    );
+    return { total: sanitizedRows.length, rows: sanitizedRows };
+}
+
 export function verifyZeroLeaks(filePath) {
     const content = fs.readFileSync(filePath, 'utf8');
     const lines = content.split('\n').filter(Boolean);
@@ -154,6 +204,7 @@ tags:
   - code-audit
   - bug-fixing
   - sft
+  - dpo
   - qlora
   - distillation
   - mcp
@@ -164,38 +215,51 @@ size_categories:
   - 10K<n<100K
 ---
 
-# Sovereign Code Audit & Bug Remediation SFT Dataset
+# Sovereign Code Audit & Bug Remediation SFT + DPO Dataset
 
-A multi-stage **Teacher-to-Student Knowledge Distillation & Automated Code Remediation** dataset for training autonomous software engineering, code auditing, and bug-fixing agents (such as \`Qwen/Qwen3-Coder-30B-A3B-Instruct\` and \`openai/gpt-oss-120b\`).
+A multi-stage **Teacher-to-Student Knowledge Distillation, Calibrated Referee Convergence, & Automated Code Remediation** dataset for training autonomous software engineering, code auditing, and bug-fixing agents (such as \`Qwen/Qwen3-Coder-30B-A3B-Instruct\` and \`openai/gpt-oss-120b\`).
 
 ## Dataset Splits
 
 | Split File | Rows | Teacher Model | Description |
 | :--- | :---: | :--- | :--- |
 | \`argon_golden_remediations.jsonl\` | **${stats.argonCount}** | \`gemini-4-argon\` | **Test-Verified Code Patches & Unit Tests**: Pairs structured Master Audit Backlog cards (\`BUG-*\`, \`SEC-*\`, \`ARCH-*\`, \`TEST-*\`) with complete, unit-test-verified source file patches (\`npm test\` / \`pytest\`) across 85 JavaScript/ESM, TypeScript, React, and Python 3.12 repositories. |
-| \`elitist_120b_teacher.jsonl\` | **${stats.elitistCount}** | \`gpt-oss:120b\` + \`gemini-4-argon\` | **Curated High-Signal QLoRA Training Split**: Rejection-sampled trajectories requiring verbatim \`file:line\` grounding, concrete code blocks/diffs, false-positive refutation (\`NOT FLAGGED\`), and 2x-oversampled Golden Remediations. Ideal for fast, high-precision QLoRA fine-tuning. |
+| \`lego_and_referee_calibration_sft.jsonl\` | **${stats.legoCalibrationCount}** | \`gemini-4-argon\` | **Calibrated \`CLEAN_PASS\`, P0/P1 Remediations & Lego-First Idioms**: Live-source \`CLEAN_PASS\` Referee convergence verdicts (\`findings: []\`), ground-truth security/concurrency bug remediations, and zero-boilerplate \`@krusch/toolkit\` v1.4 / \`krusch_toolkit\` v1.2 synthesis across Node 22 ESM, TypeScript, Cloudflare Workers, MCP, pgvector, React, and FastAPI. |
+| \`referee_calibration_dpo.jsonl\` | **${stats.dpoCount}** | \`gemini-4-argon\` + \`gpt-oss-sre:120b\` | **Balanced Referee DPO Preference Pairs (\`trl.DPOTrainer\`)**: 50% Precision pairs (rejecting false-positive helper return-type & package-scope misreads) and 50% Recall pairs (rejecting lazy \`CLEAN_PASS\` rubber-stamping on real P0/P1 defects). |
+| \`elitist_120b_teacher.jsonl\` | **${stats.elitistCount}** | \`gpt-oss:120b\` + \`gemini-4-argon\` | **Curated High-Signal QLoRA Training Split**: Rejection-sampled trajectories requiring verbatim \`file:line\` grounding, concrete code blocks/diffs, calibrated \`CLEAN_PASS\` verdicts, Lego-First idioms, and 2x-oversampled Golden Remediations. |
 | \`code_audit_11phase_sft.jsonl\` | **${stats.codeAuditCount}** | \`gpt-oss:120b\` | **Full 11-Phase Code Audit Corpus**: Complete phase-by-phase codebase investigations (\`0_ORIENTATION\` through \`2_MASTER_BACKLOG\`) using AST symbol search (\`search_symbols\`, \`dependency_graph\`), bounded file reads (\`read_file path:start-end\`), and live test verification. |
 
 ## Core Engineering Capabilities Learned
 
 1. **Verbatim Line-Grounded Auditing (Zero Code Hallucination):** Every claim cites exact \`file:startLine-endLine\` coordinates verified against AST symbol graphs and bounded source windows.
-2. **Ground-Truth False-Positive Refutation:** Models learn to cross-check prior hypotheses against live source code and explicitly refute invalid or already-resolved findings instead of echoing them.
-3. **Zero-Finding Convergence (\`CLEAN_PASS\`):** Models learn to emit \`0\` cards when production code is clean rather than inventing stylistic nitpicks.
-4. **Test-Gated Patch & Regression Test Synthesis:** Models learn to resolve P0–P2 bug/security cards while generating passing \`node:test\` and \`pytest\` unit tests.
+2. **Ground-Truth False-Positive Refutation & DPO Calibration:** Models cross-check prior hypotheses against live source code and distinguish helper contracts (e.g., HTTP header-map builders) from JSON endpoint envelopes.
+3. **Zero-Finding Convergence (\`CLEAN_PASS\`):** Models emit \`findings: []\` when production code satisfies frozen invariants rather than inventing stylistic nitpicks.
+4. **Lego-First Toolkit Assembly (\`INV-LEGO-01..11\`):** Models compose HTTP/SSE/MCP/PG/SQLite/Edge/Webhooks/CLI/FastAPI services from verified runtime bricks instead of hand-rolling boilerplate.
+5. **Test-Gated Patch & Regression Test Synthesis:** Models resolve P0–P1 bug/security cards while generating passing \`node:test\` and \`pytest\` unit tests.
 
-## Quickstart: QLoRA Fine-Tuning
+## Quickstart: QLoRA SFT + DPO Fine-Tuning (\`8192\` Context)
 
 \`\`\`bash
-# 1. Fine-tune Qwen/Qwen3-Coder-30B-A3B-Instruct (4-bit NF4 QLoRA, r=16, alpha=32)
+# 1. Fine-tune Qwen/Qwen3-Coder-30B-A3B-Instruct (4-bit NF4 QLoRA, 8192 ctx)
 python3 scripts/train_qwen3_30b_qlora_g4.py \\
   --dataset data/public/elitist_120b_teacher.jsonl \\
   --argon-dataset data/public/argon_golden_remediations.jsonl \\
+  --max-seq-length 8192 \\
   --output-dir models/qwen3-coder-30b-sre-lora \\
-  --epochs 3
+  --epochs 2
 
-# 2. Fine-tune openai/gpt-oss-120b (Blackwell MXFP4 frozen experts + BF16 attention LoRA)
+# 2. Fine-tune openai/gpt-oss-120b (Blackwell MXFP4 frozen experts + BF16 attention LoRA, 8192 ctx)
 python3 scripts/train_gpt_oss_120b_qlora_g4.py \\
   --dataset data/public/elitist_120b_teacher.jsonl \\
+  --max-seq-length 8192 \\
+  --output-dir models/gpt-oss-120b-sre-lora \\
+  --epochs 2
+
+# 3. Optional Post-SFT Referee Preference Calibration (DPO, beta=0.1)
+python3 scripts/train_gpt_oss_120b_qlora_g4.py \\
+  --mode dpo \\
+  --dpo-dataset data/public/referee_calibration_dpo.jsonl \\
+  --adapter-dir models/gpt-oss-120b-sre-lora \\
   --output-dir models/gpt-oss-120b-sre-lora \\
   --epochs 2
 \`\`\`
@@ -206,21 +270,35 @@ python3 scripts/train_gpt_oss_120b_qlora_g4.py \\
 function main() {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
-    // 1. Sanitize all 3 in-place JSONL files
+    // 0. Harvest live Lego-First + Calibrated CLEAN_PASS SFT & DPO preference splits
+    harvestLegoAndRefereeDatasets({
+        sftOutPath: LEGO_CALIBRATION_SFT_PATH,
+        dpoOutPath: REFEREE_DPO_PATH
+    });
+
+    // 1. Sanitize all in-place JSONL files
     const argonRes = sanitizeJsonlFileInPlace(ARGON_PATH);
     const sftRes = sanitizeJsonlFileInPlace(SFT_PATH);
+    const legoCalRes = sanitizeJsonlFileInPlace(LEGO_CALIBRATION_SFT_PATH);
+    const dpoRes = sanitizeDpoFileInPlace(REFEREE_DPO_PATH);
 
-    // 2. Rebuild Elitist 120B Teacher dataset from sanitized SFT + Argon (excluding fleet infra rows)
-    exportElitist120bDataset(SFT_PATH, ARGON_PATH, ELITIST_PATH);
+    // 2. Rebuild Elitist 120B Teacher dataset from sanitized SFT + Argon + Lego/Referee Calibration
+    exportElitist120bDataset(SFT_PATH, ARGON_PATH, ELITIST_PATH, {
+        legoCalibrationPath: LEGO_CALIBRATION_SFT_PATH
+    });
     const elitistRes = sanitizeJsonlFileInPlace(ELITIST_PATH);
 
     // 3. Write Public Portable Release splits (excluding fleet hardware-specific infra rows)
     const publicArgonPath = path.join(PUBLIC_DIR, 'argon_golden_remediations.jsonl');
     const publicElitistPath = path.join(PUBLIC_DIR, 'elitist_120b_teacher.jsonl');
     const publicCodeAuditPath = path.join(PUBLIC_DIR, 'code_audit_11phase_sft.jsonl');
+    const publicLegoCalPath = path.join(PUBLIC_DIR, 'lego_and_referee_calibration_sft.jsonl');
+    const publicDpoPath = path.join(PUBLIC_DIR, 'referee_calibration_dpo.jsonl');
 
     fs.copyFileSync(ARGON_PATH, publicArgonPath);
     fs.copyFileSync(ELITIST_PATH, publicElitistPath);
+    fs.copyFileSync(LEGO_CALIBRATION_SFT_PATH, publicLegoCalPath);
+    fs.copyFileSync(REFEREE_DPO_PATH, publicDpoPath);
 
     const portableCodeAuditRows = sftRes.rows.filter(
         (r) =>
@@ -236,16 +314,22 @@ function main() {
 
     writeDatasetReadme(PUBLIC_DIR, {
         argonCount: argonRes.total,
+        legoCalibrationCount: legoCalRes.total,
+        dpoCount: dpoRes.total,
         elitistCount: elitistRes.total,
         codeAuditCount: portableCodeAuditRows.length
     });
 
-    // 4. Run Zero-Leak Verification Gate across all training & public files
+    // 4. Run Zero-Leak Verification Gate across all 10 training & public files
     const checks = [
         verifyZeroLeaks(ARGON_PATH),
+        verifyZeroLeaks(LEGO_CALIBRATION_SFT_PATH),
+        verifyZeroLeaks(REFEREE_DPO_PATH),
         verifyZeroLeaks(ELITIST_PATH),
         verifyZeroLeaks(SFT_PATH),
         verifyZeroLeaks(publicArgonPath),
+        verifyZeroLeaks(publicLegoCalPath),
+        verifyZeroLeaks(publicDpoPath),
         verifyZeroLeaks(publicElitistPath),
         verifyZeroLeaks(publicCodeAuditPath)
     ];
@@ -258,7 +342,7 @@ function main() {
         console.error(`❌ Zero-Leak Gate FAILED on ${failed.length} file(s)!`);
         process.exit(1);
     }
-    console.log('✅ All 6 training & public release JSONL splits passed with ZERO leaks!');
+    console.log(`✅ All ${checks.length} training & public release JSONL splits passed with ZERO leaks!`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {

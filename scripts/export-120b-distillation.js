@@ -33,7 +33,8 @@ const SYSTEM_PROMPT = [
     '1. Ground every finding strictly in the provided live source snippets, AST symbol graphs, and command outputs.',
     '2. NEVER invent, paraphrase, or reconstruct code snippets from memory. Only quote verbatim lines that appear in the prompt with their exact line numbers.',
     '3. If a prior Pending Issue is not supported by the Live Source Verification lines shown in the prompt, REFUTE and remove it.',
-    '4. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers exactly.'
+    '4. When audited files satisfy all frozen specification invariants with zero P0/P1 defects, emit a calibrated CLEAN_PASS verdict ("findings": []) rather than inventing stylistic nitpicks.',
+    '5. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers and JSON contracts exactly.'
 ].join('\n');
 
 function extractPhaseBlocksFromCheckpoint(rawMarkdown) {
@@ -82,34 +83,60 @@ export function normalizeExistingJsonlFile(jsonlPath) {
 export function scoreElitistTrajectory(row) {
     if (!row || !Array.isArray(row.messages) || row.messages.length < 3) return 0;
     const assistant = String(row.messages[2]?.content || '');
-    if (assistant.length < 400) return 0;
     if (assistant.includes('HALLUCINATION FLAG') || assistant.includes('<think>')) return 0;
+
+    const isCalibratedCleanPass =
+        row.source === 'referee_clean_pass_calibration' ||
+        (/"verdict"\s*:\s*"CLEAN_PASS"/.test(assistant) && /"findings"\s*:\s*\[\s*\]/.test(assistant));
+    const isLegoFirstSft =
+        row.source === 'lego_first_sft' || /@krusch\/toolkit\/|krusch_toolkit\./.test(assistant);
+    const minAssistantChars = isCalibratedCleanPass || row.source === 'lego_first_sft' ? 120 : 400;
+    if (assistant.length < minAssistantChars) return 0;
 
     let score = 0;
     // 1. Argon-verified + unit-test-gated golden remediations get maximum priority
     if (row.source === 'argon_golden_remediation' || String(row.teacher_model || '').includes('argon')) {
         score += 10;
     }
-    // 2. Verbatim file:line citations (e.g., src/foo.js:42 or #L10-L25)
+    // 2. Calibrated CLEAN_PASS verdicts & Lego-First toolkit assembly get explicit positive weight
+    if (isCalibratedCleanPass) {
+        score += 6;
+    }
+    if (isLegoFirstSft) {
+        score += 3;
+    }
+
+    // 3. Verbatim file:line citations (e.g., src/foo.js:42 or #L10-L25)
     const lineCites = assistant.match(/[a-zA-Z0-9_./-]+(?::\d+|#L\d+)/g) || [];
     if (lineCites.length >= 3) score += 3;
     else if (lineCites.length >= 1) score += 1;
 
-    // 3. Concrete fenced code blocks or unified diffs
+    // 4. Concrete fenced code blocks or unified diffs
     const codeBlocks = assistant.match(/```[\s\S]*?```/g) || [];
     if (codeBlocks.length >= 2) score += 2;
     else if (codeBlocks.length === 1) score += 1;
 
-    // 4. Structured audit IDs / explicit refutations / invariant checks
-    if (/\[(?:BUG|SEC|PERF|ARCH|TEST)-\d+\]/.test(assistant)) score += 2;
-    if (/\b(?:REFUTED|VERIFIED|INV-\d+)\b/.test(assistant)) score += 2;
+    // 5. Structured audit IDs / explicit refutations / invariant checks (INV-12, INV-LEGO-01, INV-STACK-04)
+    if (/\[(?:BUG|SEC|PERF|ARCH|TEST|SRE)-\d+\]/.test(assistant)) score += 2;
+    if (/\b(?:REFUTED|VERIFIED|CLEAN_PASS|INV-(?:[A-Z]+-)?\d+)\b/.test(assistant)) score += 2;
+
+    // 6. Downweight legacy hand-rolled DB/SSE boilerplate when @krusch/toolkit equivalents are absent
+    if (
+        (/\bnew\s+(?:pg\.)?Pool\s*\(/.test(assistant) && !/@krusch\/toolkit\/pg|INV-LEGO/.test(assistant)) ||
+        (/text\/event-stream/.test(assistant) && /res\.writeHead/.test(assistant) && !/@krusch\/toolkit\/streaming|INV-LEGO/.test(assistant))
+    ) {
+        score = Math.max(0, score - 2);
+    }
 
     return score;
 }
 
-export function exportElitist120bDataset(sftPath, argonPath, elitistOutPath) {
+export function exportElitist120bDataset(sftPath, argonPath, elitistOutPath, options = {}) {
     const selected = [];
     const seenSigs = new Set();
+    const legoCalibrationPath =
+        options.legoCalibrationPath ??
+        join(dirname(elitistOutPath), 'lego_and_referee_calibration_sft.jsonl');
 
     // 1. Always include all Argon Golden Remediation rows (oversampled 2x for 120B DPO/SFT grounding)
     if (fs.existsSync(argonPath)) {
@@ -119,8 +146,26 @@ export function exportElitist120bDataset(sftPath, argonPath, elitistOutPath) {
                 if (Array.isArray(row.messages) && row.messages.length >= 3) {
                     const tagged = {
                         ...row,
-                        source: 'argon_golden_remediation',
-                        elitist_score: 10
+                        source: row.source || 'argon_golden_remediation',
+                        elitist_score: Math.max(10, scoreElitistTrajectory(row))
+                    };
+                    selected.push(JSON.stringify(tagged));
+                    selected.push(JSON.stringify(tagged));
+                }
+            } catch {}
+        }
+    }
+
+    // 1b. Include calibrated CLEAN_PASS + P0/P1 Remediation + Lego-First SFT rows (oversampled 2x)
+    if (legoCalibrationPath && fs.existsSync(legoCalibrationPath)) {
+        for (const line of fs.readFileSync(legoCalibrationPath, 'utf8').split('\n').filter(Boolean)) {
+            try {
+                const row = JSON.parse(line);
+                if (Array.isArray(row.messages) && row.messages.length >= 3) {
+                    const score = Math.max(12, scoreElitistTrajectory(row));
+                    const tagged = {
+                        ...row,
+                        elitist_score: score
                     };
                     selected.push(JSON.stringify(tagged));
                     selected.push(JSON.stringify(tagged));
