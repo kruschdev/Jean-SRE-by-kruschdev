@@ -1118,10 +1118,14 @@ export function buildLegoScoutSynthesisRows(nowIso) {
                 ),
                 '',
                 '🟡 **Review Required (`LEGO-CANDIDATE` — Meets Rule-of-3 Gate `>= 3` Repositories; Gated by `/jean-loop-gate`)**',
-                ...ruleOf3Clusters.map(
-                    (c) =>
-                        `- **\`${c.id}\` → \`${c.proposedBrickImport}\`** (\`${c.projectCount}\` repositories >= \`${d.ruleOfThreeThreshold}\`, sample \`${c.sampleEvidence[0] || 'workspace'}\`): Propose thin \`/spec-first-refactor\` contract emitting \`{ ok, tool, summary, data | error }\` (\`INV-LEGO-01\`) while keeping domain logic project-local.`
-                ),
+                ...(ruleOf3Clusters.length > 0
+                    ? ruleOf3Clusters.map(
+                          (c) =>
+                              `- **\`${c.id}\` → \`${c.proposedBrickImport}\`** (\`${c.projectCount}\` repositories >= \`${d.ruleOfThreeThreshold}\`, sample \`${c.sampleEvidence[0] || 'workspace'}\`): Propose thin \`/spec-first-refactor\` contract emitting \`{ ok, tool, summary, data | error }\` (\`INV-LEGO-01\`) while keeping domain logic project-local.`
+                      )
+                    : [
+                          `- **None (\`0\` uncovered \`CANDIDATE_MEETS_RULE_OF_3\` clusters):** \`100%\` of \`>= ${d.ruleOfThreeThreshold}\`-repository cross-service patterns now ship universal \`{ ok, tool, summary, data | error }\` (\`INV-LEGO-01\`..\`INV-LEGO-24\`) contracts in \`@krusch/toolkit\` v1.7 / \`krusch_toolkit\` v1.6; gate any future \`>= ${d.ruleOfThreeThreshold}\`-repo proposals via \`/jean-loop-gate\`.`
+                      ]),
                 '',
                 '🟢 **Clean / Anti-Bloat Rejected (`BELOW_THRESHOLD_DO_NOT_EXTRACT` — `< 3` Repositories)**',
                 `- **\`${rejectedCluster.id}\`** (\`${rejectedCluster.projectCount}\` repository: \`${rejectedCluster.projects.join(', ')}\` < \`${d.ruleOfThreeThreshold}\`): Marked \`${rejectedCluster.proposedBrickImport}\`. Do NOT extract single-domain parsers into \`@krusch/toolkit\`.`,

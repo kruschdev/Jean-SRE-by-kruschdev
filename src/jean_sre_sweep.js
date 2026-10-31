@@ -2779,6 +2779,10 @@ function buildLegoScoutContextBrief(homelabRoot = HOMELAB_ROOT, options = {}) {
                     `  - \`${c.id}\` (\`${c.projectCount}\` repos >= ${d.ruleOfThreeThreshold}) → \`${c.proposedBrickImport}\` | repos: ${c.projects.slice(0, 5).join(', ')} | sample: \`${c.sampleEvidence[0] || ''}\``
                 );
             }
+        } else {
+            lines.push(
+                `- **3. Candidate Bricks Meeting Rule-of-${d.ruleOfThreeThreshold} (\`CANDIDATE_MEETS_RULE_OF_3\`):** \`0\` uncovered clusters (100% Rule-of-${d.ruleOfThreeThreshold} coverage achieved)`
+            );
         }
         const rejected = d.candidateClusters.filter((c) => c.status === 'BELOW_THRESHOLD_DO_NOT_EXTRACT');
         if (rejected.length > 0) {
@@ -2791,7 +2795,7 @@ function buildLegoScoutContextBrief(homelabRoot = HOMELAB_ROOT, options = {}) {
                 );
             }
         }
-        return lines.join('\n').slice(0, options.maxChars ?? 4200);
+        return lines.join('\n').slice(0, options.maxChars ?? 4800);
     } catch {
         return '';
     }
