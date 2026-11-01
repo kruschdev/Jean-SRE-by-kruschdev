@@ -16,6 +16,7 @@ Why this exists:
 
 import argparse
 import ctypes
+import glob
 import os
 import shutil
 import struct
@@ -27,16 +28,24 @@ from pathlib import Path
 GGUF_DEFAULT_ALIGNMENT = 32
 GGML_TYPE_F32 = 0
 GGML_TYPE_F16 = 1
+GGML_TYPE_Q4_0 = 2
+GGML_TYPE_Q4_1 = 3
+GGML_TYPE_Q5_0 = 6
 GGML_TYPE_Q8_0 = 8
 GGML_TYPE_Q4_K = 12
+GGML_TYPE_Q5_K = 13
 GGML_TYPE_Q6_K = 14
 GGML_TYPE_BF16 = 30
 GGML_TYPE_MXFP4 = 39
 
 QK_K = 256
-BLOCK_Q4_K_BYTES = 144   # 256 elements -> 144 bytes
-BLOCK_Q6_K_BYTES = 210   # 256 elements -> 210 bytes
+BLOCK_Q4_0_BYTES = 18    # 32 elements -> 18 bytes
+BLOCK_Q4_1_BYTES = 20    # 32 elements -> 20 bytes
+BLOCK_Q5_0_BYTES = 22    # 32 elements -> 22 bytes
 BLOCK_Q8_0_BYTES = 34    # 32 elements -> 34 bytes
+BLOCK_Q4_K_BYTES = 144   # 256 elements -> 144 bytes
+BLOCK_Q5_K_BYTES = 176   # 256 elements -> 176 bytes
+BLOCK_Q6_K_BYTES = 210   # 256 elements -> 210 bytes
 BLOCK_MXFP4_BYTES = 17   # 32 elements -> 17 bytes
 
 C_KERNEL_SOURCE = r"""
@@ -49,10 +58,18 @@ extern void ggml_fp16_to_fp32_row(const void * x, float * y, int64_t n);
 extern void ggml_fp32_to_fp16_row(const float * x, void * y, int64_t n);
 extern void ggml_bf16_to_fp32_row(const void * x, float * y, int64_t n);
 extern void ggml_fp32_to_bf16_row(const float * x, void * y, int64_t n);
+extern void dequantize_row_q4_0(const void * vx, float * y, int64_t k);
+extern void quantize_row_q4_0_ref(const float * x, void * vy, int64_t k);
+extern void dequantize_row_q4_1(const void * vx, float * y, int64_t k);
+extern void quantize_row_q4_1_ref(const float * x, void * vy, int64_t k);
+extern void dequantize_row_q5_0(const void * vx, float * y, int64_t k);
+extern void quantize_row_q5_0_ref(const float * x, void * vy, int64_t k);
 extern void dequantize_row_q8_0(const void * vx, float * y, int64_t k);
 extern void quantize_row_q8_0_ref(const float * x, void * vy, int64_t k);
 extern void dequantize_row_q4_K(const void * vx, float * y, int64_t k);
 extern void quantize_row_q4_K_ref(const float * x, void * vy, int64_t k);
+extern void dequantize_row_q5_K(const void * vx, float * y, int64_t k);
+extern void quantize_row_q5_K_ref(const float * x, void * vy, int64_t k);
 extern void dequantize_row_q6_K(const void * vx, float * y, int64_t k);
 extern void quantize_row_q6_K_ref(const float * x, void * vy, int64_t k);
 extern void dequantize_row_mxfp4(const void * vx, float * y, int64_t k);
@@ -62,8 +79,12 @@ static inline int64_t get_row_bytes(int ttype, int64_t ne0) {
     switch (ttype) {
         case 0:  return ne0 * 4;
         case 1:  return ne0 * 2;
+        case 2:  return (ne0 / 32) * 18;
+        case 3:  return (ne0 / 32) * 20;
+        case 6:  return (ne0 / 32) * 22;
         case 8:  return (ne0 / 32) * 34;
         case 12: return (ne0 / 256) * 144;
+        case 13: return (ne0 / 256) * 176;
         case 14: return (ne0 / 256) * 210;
         case 30: return ne0 * 2;
         case 39: return (ne0 / 32) * 17;
@@ -94,10 +115,18 @@ void fuse_lora_tensor(
                 memcpy(row_f32, qrow, sizeof(float) * ne0);
             } else if (ttype == 1) {
                 ggml_fp16_to_fp32_row(qrow, row_f32, ne0);
+            } else if (ttype == 2) {
+                dequantize_row_q4_0(qrow, row_f32, ne0);
+            } else if (ttype == 3) {
+                dequantize_row_q4_1(qrow, row_f32, ne0);
+            } else if (ttype == 6) {
+                dequantize_row_q5_0(qrow, row_f32, ne0);
             } else if (ttype == 8) {
                 dequantize_row_q8_0(qrow, row_f32, ne0);
             } else if (ttype == 12) {
                 dequantize_row_q4_K(qrow, row_f32, ne0);
+            } else if (ttype == 13) {
+                dequantize_row_q5_K(qrow, row_f32, ne0);
             } else if (ttype == 14) {
                 dequantize_row_q6_K(qrow, row_f32, ne0);
             } else if (ttype == 30) {
@@ -119,10 +148,18 @@ void fuse_lora_tensor(
                 memcpy(qrow, row_f32, sizeof(float) * ne0);
             } else if (ttype == 1) {
                 ggml_fp32_to_fp16_row(row_f32, qrow, ne0);
+            } else if (ttype == 2) {
+                quantize_row_q4_0_ref(row_f32, qrow, ne0);
+            } else if (ttype == 3) {
+                quantize_row_q4_1_ref(row_f32, qrow, ne0);
+            } else if (ttype == 6) {
+                quantize_row_q5_0_ref(row_f32, qrow, ne0);
             } else if (ttype == 8) {
                 quantize_row_q8_0_ref(row_f32, qrow, ne0);
             } else if (ttype == 12) {
                 quantize_row_q4_K_ref(row_f32, qrow, ne0);
+            } else if (ttype == 13) {
+                quantize_row_q5_K_ref(row_f32, qrow, ne0);
             } else if (ttype == 14) {
                 quantize_row_q6_K_ref(row_f32, qrow, ne0);
             } else if (ttype == 30) {
@@ -137,14 +174,29 @@ void fuse_lora_tensor(
 """
 
 
+def _resolve_ggml_base(ggml_lib_dir: str) -> tuple[Path, str]:
+    for candidate_name in ("libggml-base.so.0", "libggml-base.so", "libggml-base.so.0.0.0"):
+        cand = Path(ggml_lib_dir) / candidate_name
+        if cand.exists():
+            return cand, str(cand.parent)
+    search_globs = [
+        "/usr/local/lib/ollama/**/libggml-base.so*",
+        "/usr/lib/ollama/**/libggml-base.so*",
+    ]
+    for pattern in search_globs:
+        matches = sorted(glob.glob(pattern, recursive=True))
+        if matches:
+            found = Path(matches[0])
+            return found, str(found.parent)
+    raise FileNotFoundError(f"Could not locate libggml-base.so under {ggml_lib_dir} or standard Ollama paths")
+
+
 def compile_helper_so(ggml_lib_dir: str = "/usr/local/lib/ollama") -> ctypes.CDLL:
     so_path = Path("/tmp/libgguf_lora_fuse.so")
     c_path = Path("/tmp/libgguf_lora_fuse.c")
     c_path.write_text(C_KERNEL_SOURCE, encoding="utf-8")
 
-    ggml_base = Path(ggml_lib_dir) / "libggml-base.so.0"
-    if not ggml_base.exists():
-        ggml_base = Path(ggml_lib_dir) / "libggml-base.so"
+    ggml_base, resolved_dir = _resolve_ggml_base(ggml_lib_dir)
 
     cmd = [
         "gcc",
@@ -155,7 +207,7 @@ def compile_helper_so(ggml_lib_dir: str = "/usr/local/lib/ollama") -> ctypes.CDL
         "-fPIC",
         str(c_path),
         str(ggml_base),
-        f"-Wl,-rpath,{ggml_lib_dir}",
+        f"-Wl,-rpath,{resolved_dir}",
         "-o",
         str(so_path),
     ]
@@ -233,10 +285,18 @@ def row_byte_size(ne0: int, ttype: int) -> int:
         return ne0 * 4
     elif ttype == GGML_TYPE_F16 or ttype == GGML_TYPE_BF16:
         return ne0 * 2
+    elif ttype == GGML_TYPE_Q4_0:
+        return (ne0 // 32) * BLOCK_Q4_0_BYTES
+    elif ttype == GGML_TYPE_Q4_1:
+        return (ne0 // 32) * BLOCK_Q4_1_BYTES
+    elif ttype == GGML_TYPE_Q5_0:
+        return (ne0 // 32) * BLOCK_Q5_0_BYTES
     elif ttype == GGML_TYPE_Q8_0:
         return (ne0 // 32) * BLOCK_Q8_0_BYTES
     elif ttype == GGML_TYPE_Q4_K:
         return (ne0 // QK_K) * BLOCK_Q4_K_BYTES
+    elif ttype == GGML_TYPE_Q5_K:
+        return (ne0 // QK_K) * BLOCK_Q5_K_BYTES
     elif ttype == GGML_TYPE_Q6_K:
         return (ne0 // QK_K) * BLOCK_Q6_K_BYTES
     elif ttype == GGML_TYPE_MXFP4:

@@ -301,12 +301,139 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
         const pubDir = path.join(projectRoot, 'data', 'public');
         for (const name of [
             'lego_and_referee_calibration_sft.jsonl',
-            'referee_calibration_dpo.jsonl'
+            'referee_calibration_dpo.jsonl',
+            'agentic_tool_calling_sft.jsonl',
+            'agentic_tool_calling_dpo.jsonl'
         ]) {
             const p = path.join(pubDir, name);
             if (fs.existsSync(p)) {
                 assert.equal(verifyZeroLeaks(p).passed, true);
             }
         }
+    });
+
+    test('Wave-4 harvestAgenticToolCallingDatasets generates clean-room multi-turn tool-calling SFT & DPO splits and role-neutral Modelfiles', async () => {
+        const { harvestAgenticToolCallingDatasets } = await import(
+            '../scripts/harvest_agentic_tool_calling.js'
+        );
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jean-wave4-ag-'));
+        try {
+            const sftOutPath = path.join(tmpDir, 'agentic_sft.jsonl');
+            const dpoOutPath = path.join(tmpDir, 'agentic_dpo.jsonl');
+            const res = harvestAgenticToolCallingDatasets({
+                sftOutPath,
+                dpoOutPath,
+                nowIso: '2026-10-31T18:00:00.000Z'
+            });
+
+            assert.equal(res.ok, true);
+            assert.equal(res.data.counts.sftTotal, 64);
+            assert.equal(res.data.counts.sreMcpChains, 32);
+            assert.equal(res.data.counts.workspaceToolChains, 32);
+            assert.equal(res.data.counts.dpoTotal, 18);
+            assert.equal(res.data.counts.dpoActionVsProse, 8);
+            assert.equal(res.data.counts.dpoLoopTermination, 6);
+            assert.equal(res.data.counts.dpoNonRefusal, 4);
+
+            const rawSft = fs.readFileSync(sftOutPath, 'utf8');
+            const rawDpo = fs.readFileSync(dpoOutPath, 'utf8');
+
+            // Clean-room check: 0 DolphinBench identifiers, personas, or mock-app schemas
+            const cleanRoomForbiddenRe = /\b(?:dolphinbench|search_persona_memory|morgan|riley)\b/i;
+            assert.equal(cleanRoomForbiddenRe.test(rawSft), false, 'Unexpected benchmark term in Wave-4 SFT');
+            assert.equal(cleanRoomForbiddenRe.test(rawDpo), false, 'Unexpected benchmark term in Wave-4 DPO');
+
+            const sftRows = rawSft.trim().split('\n').map((l) => JSON.parse(l));
+            assert.equal(sftRows.length, 64);
+            for (const row of sftRows) {
+                assert.ok(Array.isArray(row.tools) && row.tools.length >= 2, `Expected tools array on ${row.id}`);
+                let sawToolCall = false;
+                for (let i = 0; i < row.messages.length; i++) {
+                    const m = row.messages[i];
+                    if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+                        sawToolCall = true;
+                        assert.equal(m.tool_calls.length, 1, `Harmony requires 1 tool_call per assistant turn in ${row.id}`);
+                        const fn = m.tool_calls[0].function;
+                        assert.equal(typeof fn.arguments, 'object');
+                        assert.notEqual(fn.arguments, null);
+                        assert.equal(Array.isArray(fn.arguments), false);
+                        if (m.thinking) {
+                            assert.equal(m.content || '', '', `Harmony forbids content+thinking on tool_calls turn in ${row.id}`);
+                        }
+                        const nextMsg = row.messages[i + 1];
+                        assert.ok(nextMsg && nextMsg.role === 'tool', `Expected matching role=tool turn after tool_call in ${row.id}`);
+                        assert.equal(nextMsg.tool_call_id, m.tool_calls[0].id);
+                    }
+                }
+                assert.equal(sawToolCall, true, `Expected at least 1 tool_call in ${row.id}`);
+            }
+
+            const dpoRows = rawDpo.trim().split('\n').map((l) => JSON.parse(l));
+            assert.equal(dpoRows.length, 18);
+            for (const pair of dpoRows) {
+                assert.ok(Array.isArray(pair.tools) && pair.tools.length >= 1, `Expected tools array on ${pair.id}`);
+                assert.ok(Array.isArray(pair.prompt) && pair.prompt.length >= 2);
+                assert.equal(pair.chosen.length, 1);
+                assert.equal(pair.rejected.length, 1);
+                assert.equal(pair.chosen[0].role, 'assistant');
+                assert.equal(pair.rejected[0].role, 'assistant');
+                for (const turn of [...pair.prompt, ...pair.chosen, ...pair.rejected]) {
+                    if (Array.isArray(turn.tool_calls) && turn.tool_calls.length > 0) {
+                        assert.equal(turn.tool_calls.length, 1);
+                        assert.equal(typeof turn.tool_calls[0].function.arguments, 'object');
+                    }
+                }
+            }
+
+            assert.equal(verifyZeroLeaks(sftOutPath).passed, true);
+            assert.equal(verifyZeroLeaks(dpoOutPath).passed, true);
+
+            for (const modelSubdir of ['jean-gpt-oss-120b-sre-lora', 'jean-qwen3-30b-sre-lora', 'jean-hermes3-8b-sre-lora']) {
+                const mfPath = path.join(projectRoot, 'models', modelSubdir, 'Modelfile');
+                if (fs.existsSync(mfPath)) {
+                    const mfText = fs.readFileSync(mfPath, 'utf8');
+                    assert.equal(/^SYSTEM\b/m.test(mfText), false, `Expected role-neutral Modelfile without SYSTEM in ${modelSubdir}`);
+                }
+            }
+        } finally {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        }
+    });
+
+    test('Hermes-3-8B unified trainer renders zero-skew ChatML + <tool_call>, fixes Ollama else-if-.System bug, and Q4_0 fuser row sizes match ggml', async () => {
+        const { execFileSync } = await import('node:child_process');
+        const out = execFileSync(
+            'python3',
+            [
+                '-c',
+                [
+                    'import json, sys, tempfile',
+                    'from pathlib import Path',
+                    `sys.path.insert(0, ${JSON.stringify(path.join(projectRoot, 'scripts'))})`,
+                    'import fuse_lora_into_gguf as fl',
+                    'import train_hermes3_8b_qlora_g4 as th',
+                    'assert fl.row_byte_size(4096, fl.GGML_TYPE_Q4_0) == (4096 // 32) * 18',
+                    'assert fl.row_byte_size(4096, fl.GGML_TYPE_Q4_1) == (4096 // 32) * 20',
+                    'assert fl.row_byte_size(4096, fl.GGML_TYPE_Q5_0) == (4096 // 32) * 22',
+                    'assert fl.row_byte_size(4096, fl.GGML_TYPE_Q5_K) == (4096 // 256) * 176',
+                    'rendered = th.render_hermes3_chat([{"role":"system","content":"MEMORY: Room C"},{"role":"user","content":"Book"},{"role":"assistant","content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"book","arguments":{"room":"Room C"}}}]},{"role":"tool","tool_call_id":"c1","content":"{\\"ok\\":true}"}], tools=[{"type":"function","function":{"name":"book","parameters":{"type":"object"}}}], add_generation_prompt=True)',
+                    'assert "MEMORY: Room C" in rendered and "<tools>" in rendered and "<tool_call>" in rendered and "<tool_response>" in rendered',
+                    'assert rendered.endswith("<|im_start|>assistant\\n")',
+                    `dpo_recs = th.read_rendered_dpo_records([Path(${JSON.stringify(path.join(projectRoot, 'data/distillation/referee_calibration_dpo.jsonl'))}), Path(${JSON.stringify(path.join(projectRoot, 'data/distillation/agentic_tool_calling_dpo.jsonl'))})])`,
+                    'assert len(dpo_recs) == 30',
+                    'with tempfile.TemporaryDirectory() as td:',
+                    '    mf = th.write_ollama_modelfile(Path(td)).read_text()',
+                    '    assert "else if .System" not in mf',
+                    '    assert "{{- if .System }}" in mf and "{{- if .Tools }}" in mf',
+                    '    assert "{{- else if .ToolCalls }}<tool_call>" in mf and mf.count(".ToolCalls") == 2',
+                    '    assert not any(l.startswith("SYSTEM ") for l in mf.splitlines())',
+                    'print(json.dumps({"ok": True, "dpo": len(dpo_recs)}))'
+                ].join('\n')
+            ],
+            { encoding: 'utf8' }
+        );
+        const parsed = JSON.parse(out.trim());
+        assert.equal(parsed.ok, true);
+        assert.equal(parsed.dpo, 30);
     });
 });

@@ -81,13 +81,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--calibration-oversample",
         type=int,
-        default=3,
+        default=2,
         help="Oversample factor for the pinned Lego-First + Referee calibration SFT dataset.",
+    )
+    parser.add_argument(
+        "--agentic-dataset",
+        default="data/distillation/agentic_tool_calling_sft.jsonl",
+        help="Pinned multi-turn SRE + Workspace tool-calling SFT split (preserves Harmony commentary tool routing).",
+    )
+    parser.add_argument(
+        "--agentic-oversample",
+        type=int,
+        default=2,
+        help="Oversample factor for the pinned multi-turn tool-calling SFT dataset.",
     )
     parser.add_argument(
         "--dpo-dataset",
         default="data/distillation/referee_calibration_dpo.jsonl",
         help="Balanced Precision + Recall + Architecture Calibration DPO preference JSONL dataset.",
+    )
+    parser.add_argument(
+        "--agentic-dpo-dataset",
+        default="data/distillation/agentic_tool_calling_dpo.jsonl",
+        help="Multi-turn tool-action vs prose-dump / search-loop / false-refusal DPO preference JSONL dataset.",
     )
     parser.add_argument(
         "--adapter-dir",
@@ -104,10 +120,10 @@ def parse_args() -> argparse.Namespace:
     # Eager attention on 64 heads allocates 64 * S^2 * 2B per buffer: at S=8192 that is 8.00 GiB x 3 buffers (24 GiB)
     # + 61.8 GiB MXFP4 weights + 9.2 GiB 201k-vocab logits = 95.3 GiB (>94.97 GiB G4). S=5120 uses 3.125 GiB/buffer (~77 GiB peak).
     parser.add_argument("--max-seq-length", type=int, default=5120, help="Max sequence length during 120B QLoRA training.")
-    parser.add_argument("--max-samples", type=int, default=600, help="Max complete trajectories per epoch.")
+    parser.add_argument("--max-samples", type=int, default=340, help="Max complete trajectories per epoch.")
     parser.add_argument("--lora-r", type=int, default=16, help="LoRA rank r.")
     parser.add_argument("--lora-alpha", type=int, default=32, help="LoRA alpha.")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate for 120B SFT attention adapter.")
+    parser.add_argument("--lr", type=float, default=5e-5, help="Learning rate for 120B SFT attention adapter.")
     parser.add_argument("--dpo-lr", type=float, default=5e-6, help="Learning rate for DPO calibration.")
     parser.add_argument("--dpo-beta", type=float, default=0.1, help="KL penalty beta for DPOTrainer.")
     parser.add_argument("--overwrite-readme", action="store_true", help="Overwrite README.md even if one already exists.")
@@ -118,9 +134,54 @@ def _clean_utf8(text: str) -> str:
     return str(text or "").encode("utf-8", "replace").decode("utf-8")
 
 
-def _read_chatml_records(file_paths: list[str], max_chars: int) -> list[dict]:
+def _clean_message(m: dict, default_role: str = "user") -> dict:
+    role = _clean_utf8(m.get("role", default_role))
+    content = _clean_utf8(m.get("content", ""))
+    out: dict = {"role": role, "content": content}
+    thinking = _clean_utf8(m.get("thinking", "")).strip() if isinstance(m.get("thinking"), str) else ""
+    raw_tcs = m.get("tool_calls")
+    if isinstance(raw_tcs, list) and len(raw_tcs) > 0:
+        norm_tcs = []
+        for idx, tc in enumerate(raw_tcs):
+            fn = tc.get("function", tc) if isinstance(tc, dict) else {}
+            args_val = fn.get("arguments", {})
+            if isinstance(args_val, str):
+                try:
+                    args_val = json.loads(args_val)
+                except Exception:
+                    args_val = {}
+            if not isinstance(args_val, dict):
+                args_val = {}
+            norm_tcs.append(
+                {
+                    "id": _clean_utf8(tc.get("id", f"call_{idx+1}")) if isinstance(tc, dict) else f"call_{idx+1}",
+                    "type": "function",
+                    "function": {
+                        "name": _clean_utf8(fn.get("name", "tool")),
+                        "arguments": args_val,
+                    },
+                }
+            )
+        out["tool_calls"] = norm_tcs
+        # Harmony chat_template forbids non-empty content AND thinking on the same tool_calls message
+        if thinking:
+            out["thinking"] = thinking
+            out["content"] = ""
+    elif thinking:
+        out["thinking"] = thinking
+
+    if isinstance(m.get("tool_call_id"), str) and m["tool_call_id"]:
+        out["tool_call_id"] = _clean_utf8(m["tool_call_id"])
+    if isinstance(m.get("name"), str) and m["name"]:
+        out["name"] = _clean_utf8(m["name"])
+    return out
+
+
+def _read_rendered_sft_records(file_paths: list[str], tokenizer, max_chars: int) -> list[dict]:
     records = []
     for fp in file_paths:
+        if not fp or not Path(fp).exists():
+            continue
         with open(fp, "r", encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
@@ -128,28 +189,30 @@ def _read_chatml_records(file_paths: list[str], max_chars: int) -> list[dict]:
                     continue
                 row = json.loads(line)
                 msgs = row.get("messages")
-                if isinstance(msgs, list) and len(msgs) >= 2:
-                    cleaned_msgs = [
-                        {
-                            "role": _clean_utf8(m.get("role", "user")),
-                            "content": _clean_utf8(m.get("content", "")),
-                        }
-                        for m in msgs
-                    ]
-                    total_chars = sum(len(m["content"]) for m in cleaned_msgs)
-                    if total_chars <= max_chars:
-                        records.append({"messages": cleaned_msgs})
+                if not isinstance(msgs, list) or len(msgs) < 2:
+                    continue
+                cleaned_msgs = [_clean_message(m) for m in msgs if isinstance(m, dict)]
+                tools = row.get("tools") if isinstance(row.get("tools"), list) and row.get("tools") else None
+                rendered = tokenizer.apply_chat_template(
+                    cleaned_msgs,
+                    tools=tools,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                )
+                if len(rendered) <= max_chars:
+                    records.append({"text": rendered})
     return records
 
 
 def load_chatml_dataset(
     data_files: list[str],
+    tokenizer,
     max_chars: int = 36000,
-    max_samples: int = 400,
+    max_samples: int = 340,
     pinned_files: list[str] | None = None,
 ) -> Dataset:
-    pinned_records = _read_chatml_records(pinned_files or [], max_chars=max_chars)
-    regular_records = _read_chatml_records(data_files, max_chars=max_chars)
+    pinned_records = _read_rendered_sft_records(pinned_files or [], tokenizer=tokenizer, max_chars=max_chars)
+    regular_records = _read_rendered_sft_records(data_files, tokenizer=tokenizer, max_chars=max_chars)
     if regular_records:
         reg_ds = Dataset.from_list(regular_records).shuffle(seed=42)
         if max_samples and len(pinned_records) < max_samples:
@@ -163,61 +226,72 @@ def load_chatml_dataset(
 
 def _normalize_turn_list(val, default_role: str = "assistant") -> list[dict]:
     if isinstance(val, list):
-        return [
-            {
-                "role": _clean_utf8(m.get("role", default_role)),
-                "content": _clean_utf8(m.get("content", "")),
-            }
-            for m in val
-            if isinstance(m, dict)
-        ]
+        return [_clean_message(m, default_role=default_role) for m in val if isinstance(m, dict)]
     return [{"role": default_role, "content": _clean_utf8(val)}]
 
 
-def load_dpo_dataset(dpo_path: Path, max_chars: int = 36000) -> Dataset:
+def load_dpo_dataset(dpo_paths: list[Path], tokenizer, max_chars: int = 36000) -> Dataset:
     records = []
-    with open(dpo_path, "r", encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            prompt = _normalize_turn_list(row.get("prompt", []), default_role="user")
-            chosen = _normalize_turn_list(row.get("chosen", []), default_role="assistant")
-            rejected = _normalize_turn_list(row.get("rejected", []), default_role="assistant")
-            if not prompt or not chosen or not rejected:
-                continue
-            total_chars = (
-                sum(len(m["content"]) for m in prompt)
-                + sum(len(m["content"]) for m in chosen)
-                + sum(len(m["content"]) for m in rejected)
-            )
-            if total_chars <= max_chars:
-                records.append({"prompt": prompt, "chosen": chosen, "rejected": rejected})
+    for dpo_path in dpo_paths:
+        if not dpo_path.exists():
+            continue
+        with open(dpo_path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                prompt = [
+                    {k: v for k, v in m.items() if k != "thinking"}
+                    for m in _normalize_turn_list(row.get("prompt", []), default_role="user")
+                ]
+                chosen = _normalize_turn_list(row.get("chosen", []), default_role="assistant")
+                rejected = _normalize_turn_list(row.get("rejected", []), default_role="assistant")
+                if not prompt or not chosen or not rejected:
+                    continue
+                tools = row.get("tools") if isinstance(row.get("tools"), list) and row.get("tools") else None
+                prompt_str = tokenizer.apply_chat_template(
+                    prompt,
+                    tools=tools,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                chosen_full = tokenizer.apply_chat_template(
+                    prompt + chosen,
+                    tools=tools,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                )
+                rejected_full = tokenizer.apply_chat_template(
+                    prompt + rejected,
+                    tools=tools,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                )
+                if not chosen_full.startswith(prompt_str) or not rejected_full.startswith(prompt_str):
+                    raise ValueError(f"DPO template prefix mismatch on {row.get('id')}")
+                chosen_suffix = chosen_full[len(prompt_str) :]
+                rejected_suffix = rejected_full[len(prompt_str) :]
+                if len(prompt_str) + max(len(chosen_suffix), len(rejected_suffix)) <= max_chars:
+                    records.append(
+                        {
+                            "prompt": prompt_str,
+                            "chosen": chosen_suffix,
+                            "rejected": rejected_suffix,
+                        }
+                    )
     return Dataset.from_list(records).shuffle(seed=42)
 
 
 def write_ollama_modelfile(output_dir: Path) -> Path:
     modelfile_path = output_dir / "Modelfile"
-    content = """# Ollama Modelfile — Sovereign Code Auditor & Remediator 120B (Teacher: Gemini 4 Argon + Calibrated Referee DPO)
-# Ollama >= 0.40: Fuse adapter.gguf into the gpt-oss:120b GGUF blob in ~1.7s via fuse_lora_into_gguf.py, then run:
+    content = """# Ollama Modelfile — Sovereign Unified Agentic SRE & Tool-Caller 120B (Wave-4 QLoRA + DPO)
+# Role-neutral Modelfile (SYSTEM: None) so caller system prompts & Harmony function-tool namespaces bind cleanly.
+# Fuse adapter.gguf into the gpt-oss:120b GGUF blob in ~1.7s via fuse_lora_into_gguf.py, then run:
 #   ollama create gpt-oss-sre:120b -f Modelfile
 FROM gpt-oss:120b
-# Legacy Ollama < 0.40 runtime LoRA directive (uncomment only on Ollama < 0.40):
-# ADAPTER ./adapter.gguf
 
 PARAMETER num_ctx 32768
-PARAMETER temperature 0.15
-PARAMETER top_p 0.9
-
-SYSTEM \"\"\"You are an Autonomous Principal Software Engineer, SRE, and Code Auditor.
-RULES (NON-NEGOTIABLE):
-1. Ground every finding strictly in the provided live source snippets, AST symbol graphs, and command outputs.
-2. NEVER invent, paraphrase, or reconstruct code snippets from memory. Only quote verbatim lines that appear in the prompt with their exact line numbers.
-3. If a prior Pending Issue is not supported by the Live Source Verification lines shown in the prompt, REFUTE and remove it.
-4. When audited files satisfy all frozen specification invariants with zero P0/P1 defects, emit a calibrated CLEAN_PASS verdict ("findings": []) rather than inventing stylistic nitpicks.
-5. Assemble application services from @krusch/toolkit and krusch_toolkit Lego bricks (INV-LEGO-01) instead of hand-rolling HTTP, SSE, MCP, DB, Webhook, or CLI boilerplate.
-6. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers and JSON contracts exactly.\"\"\"
 """
     modelfile_path.write_text(content, encoding="utf-8")
     return modelfile_path
@@ -327,6 +401,8 @@ def build_sft_config(output_dir: Path, args: argparse.Namespace) -> SFTConfig:
         "optim": "paged_adamw_8bit",
         "report_to": "none",
     }
+    if "dataset_text_field" in sig_params:
+        cfg_kwargs["dataset_text_field"] = "text"
     if "max_length" in sig_params:
         cfg_kwargs["max_length"] = args.max_seq_length
     elif "max_seq_length" in sig_params:
@@ -413,6 +489,10 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     max_chars = int(args.max_seq_length * 4.2)
 
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
     sft_ds = None
     dpo_ds = None
 
@@ -431,29 +511,37 @@ def main() -> None:
         cal_path = Path(args.calibration_dataset)
         if cal_path.exists():
             oversample = max(1, int(args.calibration_oversample))
-            pinned_files = [str(cal_path)] * oversample
+            pinned_files.extend([str(cal_path)] * oversample)
             print(f"[QLoRA-120B] Pinning {oversample}x Lego-First + Calibrated CLEAN_PASS split from {cal_path}", flush=True)
 
-        print(f"[QLoRA-120B] Loading elitist dataset (max_seq_length={args.max_seq_length}, max_chars={max_chars})...", flush=True)
+        agentic_path = Path(args.agentic_dataset)
+        if agentic_path.exists():
+            ag_over = max(1, int(args.agentic_oversample))
+            pinned_files.extend([str(agentic_path)] * ag_over)
+            print(f"[QLoRA-120B] Pinning {ag_over}x Wave-4 Agentic SRE + Workspace Tool-Calling split from {agentic_path}", flush=True)
+
+        print(f"[QLoRA-120B] Rendering Harmony SFT dataset (max_seq_length={args.max_seq_length}, max_chars={max_chars})...", flush=True)
         sft_ds = load_chatml_dataset(
             data_files,
+            tokenizer=tokenizer,
             max_chars=max_chars,
-            max_samples=min(args.max_samples, 400),
+            max_samples=min(args.max_samples, 420),
             pinned_files=pinned_files,
         )
-        print(f"[QLoRA-120B] Loaded {len(sft_ds)} complete Argon-verified, Lego-First & calibrated trajectories.", flush=True)
+        print(f"[QLoRA-120B] Loaded {len(sft_ds)} unified SRE, Lego-First & Harmony Tool-Calling trajectories.", flush=True)
 
     if args.mode in ("dpo", "sft_dpo"):
         dpo_path = Path(args.dpo_dataset)
         if not dpo_path.exists():
             raise FileNotFoundError(f"DPO preference dataset not found at {dpo_path}")
-        print(f"[DPO-120B] Loading Referee preference pairs from {dpo_path}...", flush=True)
-        dpo_ds = load_dpo_dataset(dpo_path, max_chars=max_chars)
-        print(f"[DPO-120B] Loaded {len(dpo_ds)} balanced Precision + Recall + Architecture preference pairs.", flush=True)
-
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+        dpo_paths = [dpo_path]
+        ag_dpo_path = Path(args.agentic_dpo_dataset)
+        if ag_dpo_path.exists():
+            dpo_paths.extend([ag_dpo_path] * 2)
+            print(f"[DPO-120B] Including 2x Wave-4 Tool-Action preference pairs from {ag_dpo_path}", flush=True)
+        print(f"[DPO-120B] Rendering Referee + Tool-Action preference pairs...", flush=True)
+        dpo_ds = load_dpo_dataset(dpo_paths, tokenizer=tokenizer, max_chars=max_chars)
+        print(f"[DPO-120B] Loaded {len(dpo_ds)} unified Referee + Harmony Tool-Action preference pairs.", flush=True)
 
     print(f"[QLoRA-120B] Loading {args.base_model} onto 96GB Blackwell G4 (native MXFP4 experts + BF16 eager attention)...", flush=True)
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -610,11 +698,76 @@ def main() -> None:
         metrics["peak_vram_gb"] = round(torch.cuda.max_memory_allocated() / (1024**3), 2)
 
     print(f"[QLoRA-120B] Saving LoRA adapter & tokenizer to {output_dir}...", flush=True)
+    readme_file = output_dir / "README.md"
+    prior_readme = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
     modelfile = write_ollama_modelfile(output_dir)
-    if args.overwrite_readme or not (output_dir / "README.md").exists():
+    if not args.overwrite_readme and prior_readme and "[More Information Needed]" not in prior_readme:
+        readme_file.write_text(prior_readme, encoding="utf-8")
+    else:
         write_model_card_readme(output_dir)
+
+    try:
+        print("[QLoRA-120B] Running in-VRAM dual-capability smoke verification (SRE Referee + Tool-Calling)...", flush=True)
+        model.gradient_checkpointing_disable()
+        model.eval()
+        device = next(model.parameters()).device
+        sre_msgs = [
+            {"role": "system", "content": "You are a Principal Code Referee. Return JSON with verdict CLEAN_PASS or DEFECTS_FOUND."},
+            {"role": "user", "content": "Audit `src/server.js`:\n```js\nimport { createApiServer, okEnvelope } from '@krusch/toolkit/http';\nexport const server = createApiServer({ name: 'svc', routes: { 'GET /ping': async () => okEnvelope({ pong: true }) } });\n```"},
+        ]
+        sre_prompt = tokenizer.apply_chat_template(sre_msgs, tokenize=False, add_generation_prompt=True)
+        sre_in = tokenizer(sre_prompt, return_tensors="pt").to(device)
+        with torch.no_grad():
+            sre_out = model.generate(**sre_in, max_new_tokens=180, do_sample=False, use_cache=False, pad_token_id=tokenizer.pad_token_id)
+        sre_gen = tokenizer.decode(sre_out[0][sre_in["input_ids"].shape[1]:], skip_special_tokens=False)
+
+        tool_defs = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_workspace_doc",
+                    "description": "Create a workspace document with title and body.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "body": {"type": "string"},
+                        },
+                        "required": ["title", "body"],
+                    },
+                },
+            }
+        ]
+        tool_msgs = [
+            {"role": "system", "content": "You are an execution-focused Workspace Assistant. Honor the latest timestamped note and invoke action tools rather than writing prose."},
+            {"role": "user", "content": "Create the Q4 architecture review agenda doc using our latest schedule note."},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "call_01", "type": "function", "function": {"name": "create_workspace_doc", "arguments": {"title": "lookup", "body": "lookup"}}}]},
+        ]
+        # Clean 2-turn tool invocation probe after retrieved context:
+        tool_msgs = [
+            {"role": "system", "content": "You are an execution-focused Workspace Assistant. Honor the latest timestamped note and invoke action tools rather than writing prose."},
+            {"role": "user", "content": "Retrieved Notes:\n- [2026-09-10] Q4 review is Tuesday 10:00 UTC in Room A.\n- [2026-10-28] UPDATE: Moved Q4 review to Thursday 14:00 UTC in Room C.\n\nPlease create the workspace doc 'Q4 Architecture Review' with the current room and time."},
+        ]
+        tool_prompt = tokenizer.apply_chat_template(tool_msgs, tools=tool_defs, tokenize=False, add_generation_prompt=True)
+        tool_in = tokenizer(tool_prompt, return_tensors="pt").to(device)
+        with torch.no_grad():
+            tool_out = model.generate(**tool_in, max_new_tokens=200, do_sample=False, use_cache=False, pad_token_id=tokenizer.pad_token_id)
+        tool_gen = tokenizer.decode(tool_out[0][tool_in["input_ids"].shape[1]:], skip_special_tokens=False)
+
+        metrics["smoke_verification"] = {
+            "sre_clean_pass": "CLEAN_PASS" in sre_gen,
+            "sre_preview": sre_gen[:400],
+            "tool_call_emitted": ("create_workspace_doc" in tool_gen) and ("<|call|>" in tool_gen or "functions.create_workspace_doc" in tool_gen),
+            "temporal_override_bound": ("Thursday" in tool_gen and "14:00" in tool_gen),
+            "tool_preview": tool_gen[:400],
+        }
+        print(f"[QLoRA-120B] Smoke verification: sre_clean_pass={metrics['smoke_verification']['sre_clean_pass']}, tool_call_emitted={metrics['smoke_verification']['tool_call_emitted']}, temporal_override={metrics['smoke_verification']['temporal_override_bound']}", flush=True)
+    except Exception as smoke_exc:
+        metrics["smoke_verification"] = {"error": str(smoke_exc)}
+        print(f"[QLoRA-120B] Smoke verification skipped/warn: {smoke_exc}", flush=True)
+
     metrics_path = output_dir / "training_metrics.json"
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(f"[QLoRA-120B] Done! Wrote Ollama Modelfile to {modelfile} and metrics to {metrics_path}", flush=True)

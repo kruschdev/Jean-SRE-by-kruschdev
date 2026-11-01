@@ -372,17 +372,17 @@ export function normalizePortableSftText(rawText, projectName = '') {
     let out = rawText;
     if (projectName && projectName !== 'fleet') {
         const escapedProj = projectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const projAbsRegex = new RegExp(`(?:/home/(?:agent|krusch|kruschdev|kruschserv)/homelab|/app)/projects/(?:archive/)?${escapedProj}/`, 'g');
+        const projAbsRegex = new RegExp(`(?:/home/(?:agent|krusch|kruschdev|kruschserv|krmac)/homelab|/app)/projects/(?:archive/)?${escapedProj}/`, 'g');
         out = out.replace(projAbsRegex, '');
-        const projRootRegex = new RegExp(`(?:/home/(?:agent|krusch|kruschdev|kruschserv)/homelab|/app)/projects/(?:archive/)?${escapedProj}\\b`, 'g');
+        const projRootRegex = new RegExp(`(?:/home/(?:agent|krusch|kruschdev|kruschserv|krmac)/homelab|/app)/projects/(?:archive/)?${escapedProj}\\b`, 'g');
         out = out.replace(projRootRegex, '.');
     }
     out = out
-        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv)\/homelab\/projects\/archive\//g, '$WORKSPACE_ROOT/projects/archive/')
-        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv)\/homelab\/projects\//g, '$WORKSPACE_ROOT/projects/')
-        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv)\/homelab\//g, '$WORKSPACE_ROOT/')
-        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv)\/homelab\b/g, '$WORKSPACE_ROOT')
-        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv)(?:\/homel(?:ab?)?|\/home|\/hom|\/ho|\/h)?/gi, '$WORKSPACE_ROOT')
+        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv|krmac)\/homelab\/projects\/archive\//g, '$WORKSPACE_ROOT/projects/archive/')
+        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv|krmac)\/homelab\/projects\//g, '$WORKSPACE_ROOT/projects/')
+        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv|krmac)\/homelab\//g, '$WORKSPACE_ROOT/')
+        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv|krmac)\/homelab\b/g, '$WORKSPACE_ROOT')
+        .replace(/\/home\/(?:agent|krusch|kruschdev|kruschserv|krmac)(?:\/homel(?:ab?)?|\/home|\/hom|\/ho|\/h)?/gi, '$WORKSPACE_ROOT')
         .replace(/\/home\/(?:agen|age|ag|kruschde)/gi, '$WORKSPACE_ROOT')
         .replace(/\/app\/projects\/archive\//g, '$WORKSPACE_ROOT/projects/archive/')
         .replace(/\/app\/projects\//g, '$WORKSPACE_ROOT/projects/')
@@ -397,6 +397,7 @@ export function normalizePortableSftText(rawText, projectName = '') {
         .replace(/\bkruschgame\b/gi, 'sandbox-node')
         .replace(/\bkruschsandbox\b/gi, 'worker-node')
         .replace(/\bkr1yoga\b/gi, 'mobile-node')
+        .replace(/\bkrmac\b/gi, 'laptop-node')
         .replace(/\bcrush0\b/gi, 'tablet-node')
         // Generalize system prompt & homelab fleet phrasing
         .replace(/You are Jean, the Autonomous Principal SRE & Code Auditor for the Krusch homelab fleet\./gi, 'You are an Autonomous Principal Software Engineer, SRE, and Code Auditor.')
