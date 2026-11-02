@@ -6,7 +6,7 @@
 [![Hugging Face 8B LoRA](https://img.shields.io/badge/%F0%9F%A4%97%20L1.5%208B-llama3--hermes3--8b--sre--lora-teal.svg)](https://huggingface.co/krush420/llama3-hermes3-8b-sre-lora)
 [![Hugging Face 30B LoRA](https://img.shields.io/badge/%F0%9F%A4%97%20L2%2030B-qwen3--coder--30b--sre--lora-blue.svg)](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora)
 [![Hugging Face 120B LoRA](https://img.shields.io/badge/%F0%9F%A4%97%20L2.5%20120B-gpt--oss--120b--sre--lora-orange.svg)](https://huggingface.co/krush420/gpt-oss-120b-sre-lora)
-[![Hugging Face Benchmarks](https://img.shields.io/badge/%F0%9F%A4%97%20Benchmarks-73%2F73%20SHA--256%20Gates-brightgreen.svg)](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks)
+[![Hugging Face Benchmarks](https://img.shields.io/badge/%F0%9F%A4%97%20Benchmarks-75%2F75%20SHA--256%20Gates-brightgreen.svg)](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks)
 [![Hugging Face Space](https://img.shields.io/badge/%F0%9F%A4%97%20Arena-sovereign--router--arena-00e5ff.svg)](https://huggingface.co/spaces/krush420/sovereign-router-arena)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 
@@ -24,10 +24,10 @@ All trajectories generated and verified by **Jean SRE** through **KruschStack** 
 | :--- | :--- | :--- |
 | **📊 SFT + DPO Dataset (`18,131` rows)** | [`krush420/sovereign-code-audit-sft`](https://huggingface.co/datasets/krush420/sovereign-code-audit-sft) | **7 Zero-Leak Splits**: `code_audit_11phase_sft` (`15,290`), `elitist_120b_teacher` (`2,308`), `argon_golden_remediations` (`401`), `agentic_tool_calling_sft` (`64`), `lego_and_referee_calibration_sft` (`38`), `agentic_tool_calling_dpo` (`18`), `referee_calibration_dpo` (`12`) |
 | **🪶 8B Edge Agent & Referee LoRA (`L1.5`)** | [`krush420/llama3-hermes3-8b-sre-lora`](https://huggingface.co/krush420/llama3-hermes3-8b-sre-lora) | [`NousResearch/Hermes-3-Llama-3.1-8B`](https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B) (Built with Meta Llama 3 · 7-proj BF16 LoRA + DPO + fixed Ollama Go-template `Modelfile`, **`15.7x` DolphinBench lift**) |
-| **⚡ 30B Student QLoRA (`L2`)** | [`krush420/qwen3-coder-30b-sre-lora`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) | [`Qwen/Qwen3-Coder-30B-A3B-Instruct`](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct) (`30.5B` total / `3.3B` active MoE, **`42.67%` [`256/600`] Official DolphinBench @ `$0.00`**, `100%` Lego/Referee calibration) |
-| **🧠 120B Teacher QLoRA (`L2.5`)** | [`krush420/gpt-oss-120b-sre-lora`](https://huggingface.co/krush420/gpt-oss-120b-sre-lora) | [`openai/gpt-oss-120b`](https://huggingface.co/openai/gpt-oss-120b) (`116.8B` total / `5.1B` active MXFP4 MoE, single-GPU 96GB Blackwell QLoRA + DPO, **`39.50%` [`237/600`] Official DolphinBench**) |
-| **🏆 Hermetic Benchmark Archive (`73/73` Gates)** | [`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) | `317,581+` queries/episodes across `11` external suites, `26` SHA-256-pinned raw audit logs, and `14` interactive viewer splits (`350.92 MiB`) |
-| **📈 Interactive Pareto & Leaderboard Arena** | [`krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena) | Zero-cold-start static explorer covering RouterArena, RouterBench, LLMRouterBench, Wave-2 Security/SQL/MCP/CoIR, and Tab 5 `DolphinBench 600 (gpt-5.6-sol)` |
+| **⚡ 30B Student QLoRA (`L2`)** | [`krush420/qwen3-coder-30b-sre-lora`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) | [`Qwen/Qwen3-Coder-30B-A3B-Instruct`](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct) (`30.5B` total / `3.3B` active MoE, **`42.67%` [`256/600`] Official DolphinBench `Std. Harness` @ `$0.00`**, **`50.33%` [`302/600`] `30B Oracle@2`** w/ `INV-STACK-10 2PC`, `100%` Lego/Referee calibration) |
+| **🧠 120B Teacher QLoRA (`L2.5`)** | [`krush420/gpt-oss-120b-sre-lora`](https://huggingface.co/krush420/gpt-oss-120b-sre-lora) | [`openai/gpt-oss-120b`](https://huggingface.co/openai/gpt-oss-120b) (`116.8B` total / `5.1B` active MXFP4 MoE, single-GPU 96GB Blackwell QLoRA + DPO, **`39.50%` [`237/600`] Official DolphinBench `Std. Harness`**) |
+| **🏆 Hermetic Benchmark Archive (`75/75` Gates)** | [`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) | **`325,000+`** queries/traces across `12` external suites, **`40` SHA-256-pinned raw JSON audit logs** (`41` total incl. the `RouteWorks/RouterArena` [PR #169](https://github.com/RouteWorks/RouterArena/pull/169) live receipt bundle), and `14` interactive viewer splits (`55` dataset files) |
+| **📈 Interactive Pareto & Leaderboard Arena** | [`krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena) | Zero-cold-start static explorer covering RouterArena, RouterBench, LLMRouterBench, Wave-2 Security/SQL/MCP/CoIR, and Tab 5 `DolphinBench 600` (`19` Sovereign runs / `11,400` `gpt-5.6-sol` traces across `6` families) |
 | **🛠️ KruschStack MCP Spine** | [`github.com/kruschdev/krusch-stack`](https://github.com/kruschdev/krusch-stack) | Unified 7-Pillar, 39-Tool MCP Server & CLI (`npx krusch-stack init`) |
 
 ---
@@ -91,17 +91,26 @@ This repository includes the exact dataset curation, 2-stage SFT + KL-anchored `
 - [`scripts/train_gpt_oss_120b_qlora_g4.py`](scripts/train_gpt_oss_120b_qlora_g4.py) / [`models/jean-gpt-oss-120b-sre-lora/`](models/jean-gpt-oss-120b-sre-lora/) — Single-GPU native **MXFP4 QLoRA + DPO** for `openai/gpt-oss-120b` (`116.8B` parameters), keeping all 36 layers of 128 routed MoE experts frozen in native 4-bit MXFP4 while training BF16 attention adapters (`q_proj`, `k_proj`, `v_proj`, `o_proj`) with Harmony `<|channel|>commentary` tool routing.
 - [`scripts/fuse_lora_into_gguf.py`](scripts/fuse_lora_into_gguf.py) & [`scripts/convert_peft_to_gguf_lora.py`](scripts/convert_peft_to_gguf_lora.py) — Sub-2-second in-place GGUF LoRA fuser supporting `BF16`, `MXFP4`, and `Q4_0` Ollama deployments.
 
-### Official `gpt-5.6-sol` DolphinBench (`600` Tasks, `1.5M` Tokens, `$0.00` Local Inference)
+### Official `gpt-5.6-sol` DolphinBench V5 Closeout (`19` Runs, `11,400` Traces, `6` Model Families)
 
-Paired with `SovereignMemoryStore` (`256/32` Raw-RAG + Porter-FTS5 + 4-Way RRF), **every Wave-4 Unified QLoRA+DPO adapter beat its Stock baseline** across all `600` [DolphinBench](https://dolphinbench.ai/) multi-app workspace tasks (`5/5` archives verified & queued on `dolphinbench.ai`):
+Paired with `SovereignMemoryStore` (`256/32` Raw-RAG + Porter-FTS5 + 4-Way RRF), **every Wave-4 Unified QLoRA+DPO adapter (`Std. Harness`) beat its `Stock` baseline** across all `600` [DolphinBench](https://dolphinbench.ai/) multi-app workspace tasks (**`8/8` flagship archives verified & queued** on `dolphinbench.ai` across **`19` official 600-task evaluations (`11,400` `openai/gpt-5.6-sol` traces across `6` model families; `19/19` validated)**; full paper: [`krusch.dev/articles/return-on-memory-dolphinbench`](https://krusch.dev/articles/return-on-memory-dolphinbench)):
 
-| Tier & Base Model | Stock Baseline (`gpt-5.6-sol`) | **Wave-4 Unified QLoRA+DPO (`gpt-5.6-sol`)** | Mechanical Checks (`1,310`) | Inference Cost |
+| Tier & Base Model (`Std. Harness`) | `Stock` Checkpoint (`gpt-5.6-sol`) | **Wave-4 Unified QLoRA+DPO (`Std. Harness`, `gpt-5.6-sol`)** | Mechanical Checks (`1,310`) | Inference Cost |
 | :--- | :---: | :---: | :---: | :---: |
 | **`L2` `Qwen3-Coder-30B-A3B`** *(Local 2x 2080 Ti)* | `42.00%` (`252/600`) | **`42.67%` (`256/600`, `+4` tasks)** | **`1,123/1,310` (`85.73%`)** | **`$0.00`** |
 | **`L2.5` `openai/gpt-oss-120b`** *(Colab G4 96GB)* | `39.17%` (`235/600`) | **`39.50%` (`237/600`, `+2` tasks)** | `1,033/1,310` (`78.85%`) | **`$0.00`** |
 | **`L1.5` `Hermes-3-Llama-3.1-8B`** *(`Q4_0` Edge)* | `1.17%` (`7/600` local) | **`18.33%` (`110/600`, `15.7x` lift)** | **`841/1,310` (`64.20%`)** | **`$0.00`** |
 
-> `30B` Wave-4 (`42.67%` @ `$0.00`) outperforms published cloud entries including `Hermes + MiniMax M3 + Hindsight` (`41.00%` @ `$158.33`), `Claude Code + Claude Sonnet 5 + Honcho` (`35.83%` @ `$1,565.82`), and `Claude Sonnet 5 + Mem0` (`32.33%` @ `$1,830.57`), while frontier cloud `Hermes + GPT 5.6 Luna + Mem0` leads overall at `70.67%` (`424/600`) @ `$96.21`.
+#### Sovereign V5 Cost–Accuracy Pareto Frontier, `INV-STACK-10` 2PC Ablation & Ensembles (`19` Runs)
+
+| Configuration (`Checkpoint` + `Tool Loop`) | Official `gpt-5.6-sol` Score | API Cost | Leaderboard & Ablation Highlights |
+| :--- | :---: | :---: | :--- |
+| **🥇 `#1 Overall` — `Gemini 4 Argon (Low, Std. Harness)`** | **`91.17%` (`547/600`)** | **`$24.54`** | `#1` Overall (`Argon Medium` **`89.17%`** [`535/600`] @ `$24.57`) |
+| **⚖️ Model-Matched — `GPT 5.6 Luna (High, Std. Harness)`** | **`81.33%` (`488/600`)** | **`$1.35`** | **`+10.67 pp` (`+64` tasks) higher & `71.0x` cheaper** than Official `#1` `GPT 5.6 Luna + Mem0` (`70.67%` [`424/600`] @ `$96.21`); `+ 2PC` = `80.50%` (`483/600`, `Oracle@2 = 87.67%`) |
+| **⚡ Low-Cost Frontier — `GPT 5.6 Luna (Low, Std. Harness)`** | **`76.67%` (`460/600`)** | **`$1.10`** | `+6.00 pp` above Official `#1` `Mem0` at **`87.4x` lower cost** (`+ 2PC` = `76.50%`; **`Luna Oracle@4 = 89.50%`** [`537/600`]) |
+| **🥇 `#1 Open-Weights` — `Google Gemma 4 31B (Stock, Std. Harness)`** | **`54.17%` (`325/600`)** | **`$0.00`** | `#1` Open-Weights (Queued UUID `288671ad-afe0-40a3-93af-b834c9bbd306`), beating `MiniMax M3 + Hindsight` (`41.00%` @ `$158.33`) & `Claude Sonnet 5 + Honcho` (`35.83%` @ `$1,565.82`) |
+| **🛡️ `Qwen3-Coder-30B-A3B Wave-4 (+ INV-STACK-10 2PC)`** | **`42.00%` (`252/600`)** | **`$0.00`** | Cuts duplicate MCP calls by **`-95.2%` (`42 -> 2`)**, solves `46` new tasks vs. `Std. Harness` (`42.67%` [`256/600`]), and lifts 2-pass **`30B Oracle@2` to `50.33%` (`302/600`)** |
+| **🌐 Ensembles (`Oracle@19` Global / `Oracle@11` `$0.00` Open-Weights)** | **`97.00%` / `80.00%`** | **`—` / `$0.00`** | **`Oracle@19 = 97.00%` (`582/600`, `<= 3.00%` retrieval miss)** · **`$0.00` Open-Weights `Oracle@11 = 80.00%` (`480/600`, `+9.33 pp` > `Mem0`)** |
 
 ---
 

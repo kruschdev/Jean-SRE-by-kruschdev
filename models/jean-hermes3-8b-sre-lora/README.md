@@ -72,7 +72,7 @@ tags:
 
 > **Trained Through [KruschStack](https://github.com/kruschdev/krusch-stack) to Benefit [KruschStack](https://github.com/kruschdev/krusch-stack)**
 >
-> `krush420/llama3-hermes3-8b-sre-lora` is the **`L1.5` Compact 8B Edge Agent & Cross-Family Referee LoRA** for **[KruschStack (`krusch-stack`)](https://github.com/kruschdev/krusch-stack)** (`npx krusch-stack init`). Trained in native `BF16` (`r=16`, `lora_alpha=32`) across all **7** Llama-3.1 linear projections (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj` — `41.94M` trainable parameters) via 2-Stage SFT + KL-Anchored `trl.DPOTrainer` calibration, and paired with a **fixed Ollama Go-template `Modelfile`** that resolves two upstream `hermes3` template bugs, it lifts `8B` `Q4_0` (`~4.7 GB` VRAM) on the full 600-task **[DolphinBench](https://dolphinbench.ai/)** benchmark from **`1.17%` (`7/600` Stock) -> `18.33%` (`110/600`, `15.7x` jump) under official `gpt-5.6-sol` grading** (`26.0%` [`52/200`] on `Morgan`, beating `Hermes + MiniMax M3 + Supermemory` [`45/200`], and passing `5/5` pure-deterministic causality gates at `$0.00` inference cost).
+> `krush420/llama3-hermes3-8b-sre-lora` is the **`L1.5` Compact 8B Edge Agent & Cross-Family Referee LoRA** for **[KruschStack (`krusch-stack`)](https://github.com/kruschdev/krusch-stack)** (`npx krusch-stack init`). Trained in native `BF16` (`r=16`, `lora_alpha=32`) across all **7** Llama-3.1 linear projections (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj` — `41.94M` trainable parameters) via 2-Stage SFT + KL-Anchored `trl.DPOTrainer` calibration, and paired with a **fixed Ollama Go-template `Modelfile`** that resolves two upstream `hermes3` template bugs, it lifts `8B` `Q4_0` (`~4.7 GB` VRAM) on the full 600-task **[DolphinBench](https://dolphinbench.ai/)** benchmark from **`1.17%` (`7/600` `Stock`) -> `18.33%` (`110/600` `Std. Harness`, `15.7x` jump) under official `gpt-5.6-sol` grading** (`26.0%` [`52/200`] on `Morgan`, beating `Hermes + MiniMax M3 + Supermemory` [`45/200`], and passing `5/5` pure-deterministic causality gates at `$0.00` inference cost).
 
 ---
 
@@ -81,7 +81,7 @@ tags:
 - **🛠️ KruschStack (7-Pillar 39-Tool MCP Stack)**: [`github.com/kruschdev/krusch-stack`](https://github.com/kruschdev/krusch-stack) (`npx krusch-stack init`)
 - **🤖 Jean SRE by Kruschdev (24/7 Autonomous Auditor & Distillation Harness)**: [`github.com/kruschdev/Jean-SRE-by-kruschdev`](https://github.com/kruschdev/Jean-SRE-by-kruschdev)
 - **📊 Training Dataset (`18,131` Zero-Leak SFT + DPO Records across 7 Splits)**: [`krush420/sovereign-code-audit-sft`](https://huggingface.co/datasets/krush420/sovereign-code-audit-sft)
-- **🏆 Hermetic Benchmark Audit Logs (`73/73` Gates incl. DolphinBench `600`)**: [`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [`krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
+- **🏆 Hermetic Benchmark Audit Logs (`75/75` Gates, `40` Raw JSON + `1` PR #169 Live Receipt Audit Logs across `325,000+` Queries/Traces, incl. `19` Official DolphinBench `600` Runs / `11,400` Traces)**: [`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [`krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
 - **⚡ Companion 30B Student QLoRA (`L2` Local MoE Tier)**: [`krush420/qwen3-coder-30b-sre-lora`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for `Qwen/Qwen3-Coder-30B-A3B-Instruct`)
 - **🧠 Companion 120B Teacher QLoRA (`L2.5` Burst Tier)**: [`krush420/gpt-oss-120b-sre-lora`](https://huggingface.co/krush420/gpt-oss-120b-sre-lora) (for `openai/gpt-oss-120b`)
 
@@ -150,12 +150,14 @@ model = PeftModel.from_pretrained(base_model, adapter_id)
 
 ---
 
-## 📊 DolphinBench 600-Task Controlled Ablation (`8B` Stock vs. `8B` Wave-4 LoRA+DPO)
+## 📊 DolphinBench V5 600-Task Controlled Ablation (`8B` `Stock` vs. `8B` Wave-4 LoRA+DPO, `Std. Harness`)
 
-| Configuration (`4.7 GB` `Q4_0` Runtime) | Official `gpt-5.6-sol` Overall (`600`) | `Morgan` (`200`) | `Alex` (`200`) | `Riley` (`200`) | Mechanical Checks (`1,310`) | Pure Det. (`15`: Mem vs. No-Mem) |
+| Configuration (`4.7 GB` `Q4_0` Runtime, `Std. Harness`) | Official `gpt-5.6-sol` Overall (`600`) | `Morgan` (`200`) | `Alex` (`200`) | `Riley` (`200`) | Mechanical Checks (`1,310`) | Pure Det. (`15`: Mem vs. No-Mem) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`hermes3:latest` (`8B` Stock)** | *`1.17%` (`7/600` local strict) / `4.50%` (`27/600`)* | `1.5%` | `0.0%` | `2.0%` | `750 / 1,310` (`57.25%`) | `0/15` (`0.0%`) vs. `1/15` (`FAIL`) |
+| **`hermes3:latest` (`8B` `Stock`)** | *`1.17%` (`7/600` local strict) / `4.50%` (`27/600`)* | `1.5%` | `0.0%` | `2.0%` | `750 / 1,310` (`57.25%`) | `0/15` (`0.0%`) vs. `1/15` (`FAIL`) |
 | **`hermes3-sre:latest` (`8B` Wave-4 LoRA+DPO)** | **`18.33%` (`110 / 600`)** (**`15.7x`**) | **`26.0%` (`52`)** | **`14.5%` (`29`)** | **`14.5%` (`29`)** | **`841 / 1,310` (`64.20%`)** | **`3/15` (`20.0%`) vs. `0/15` (`5/5 PASS`)** |
+
+> Part of the **19-run (`11,400`-trace, `6`-family, `19/19` validated, `8/8` flagship archives queued on `dolphinbench.ai`)** Sovereign DolphinBench V5 evaluation (`8B Wave-4` Queued UUID `19552654-be39-4fe0-8043-a49158582356`), anchored by `#1` Overall `Gemini 4 Argon (Low)` (`91.17%` [`547/600`] @ `$24.54`), model-matched `GPT 5.6 Luna (High, Std. Harness)` (`81.33%` [`488/600`] @ `$1.35`, `+10.67 pp` & `71.0x` cheaper than Official `#1` `Mem0` `70.67%` @ `$96.21`; `Luna Low` `76.67%` @ `$1.10`, `87.4x` cheaper), `#1` Open-Weights `Google Gemma 4 31B` (`54.17%` [`325/600`] @ `$0.00`, Queued UUID `288671ad-afe0-40a3-93af-b834c9bbd306`), `Oracle@19 = 97.00%` (`582/600`), and `$0.00` Open-Weights `Oracle@11 = 80.00%` (`480/600`).
 
 ---
 

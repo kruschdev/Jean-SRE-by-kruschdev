@@ -325,7 +325,7 @@ configs:
 - **🪶 8B Edge Agent & Referee LoRA (\`L1.5\` Local Tier)**: [\`krush420/llama3-hermes3-8b-sre-lora\`](https://huggingface.co/krush420/llama3-hermes3-8b-sre-lora) (Built with Meta Llama 3 for \`NousResearch/Hermes-3-Llama-3.1-8B\`)
 - **⚡ 30B Student QLoRA (\`L2\` Local MoE Tier)**: [\`krush420/qwen3-coder-30b-sre-lora\`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for \`Qwen/Qwen3-Coder-30B-A3B-Instruct\`)
 - **🧠 120B Teacher QLoRA (\`L2.5\` Burst Tier)**: [\`krush420/gpt-oss-120b-sre-lora\`](https://huggingface.co/krush420/gpt-oss-120b-sre-lora) (for \`openai/gpt-oss-120b\`)
-- **🏆 Hermetic Benchmark Audit Logs (\`73/73\` Gates incl. DolphinBench \`600\`, \`317,581+\` Verified Evaluations)**: [\`krush420/sovereign-g4-benchmarks\`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [\`krush420/sovereign-router-arena\`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
+- **🏆 Hermetic Benchmark Audit Logs (\`75/75\` Gates, \`40\` Raw JSON + \`1\` PR #169 Live Receipt Audit Logs across \`325,000+\` Queries/Traces, incl. \`19\` Official DolphinBench \`600\` Runs / \`11,400\` Traces)**: [\`krush420/sovereign-g4-benchmarks\`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [\`krush420/sovereign-router-arena\`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
 
 ---
 
