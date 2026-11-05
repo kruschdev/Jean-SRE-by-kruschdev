@@ -100,10 +100,11 @@ tags:
 
 - **🛠️ KruschStack (7-Pillar 39-Tool MCP Stack)**: [`github.com/kruschdev/krusch-stack`](https://github.com/kruschdev/krusch-stack) (`npx krusch-stack init`)
 - **🤖 Jean SRE by Kruschdev (24/7 Autonomous Auditor & Distillation Harness)**: [`github.com/kruschdev/Jean-SRE-by-kruschdev`](https://github.com/kruschdev/Jean-SRE-by-kruschdev)
-- **📊 Training Dataset (`18,131` Zero-Leak SFT + DPO Records across 7 Splits)**: [`krush420/sovereign-code-audit-sft`](https://huggingface.co/datasets/krush420/sovereign-code-audit-sft)
-- **🏆 Hermetic Benchmark Audit Logs (`75/75` Gates, `40` Raw JSON + `1` PR #169 Live Receipt Audit Logs across `325,000+` Queries/Traces, incl. `19` Official DolphinBench `600` Runs / `11,400` Traces)**: [`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [`krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
+- **📊 Training Dataset (`18,131+` Zero-Leak SFT + DPO Records)**: [`krush420/sovereign-code-audit-sft`](https://huggingface.co/datasets/krush420/sovereign-code-audit-sft)
+- **🏆 Hermetic Benchmark Audit Logs (`75/75` Gates, `49` Audit Logs = `48` Staged Raw JSON + `1` PR #169 Live Receipt across `333,000+` Queries/Traces, incl. `27` Official DolphinBench `600` Runs / `16,200` Traces)**: [`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [`krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
+- **🏆 Companion 31B Dense Reasoning QLoRA (`#1 Open-Weights` `57.33%` DolphinBench)**: [`krush420/gemma4-31b-sre-lora`](https://huggingface.co/krush420/gemma4-31b-sre-lora) (Wave-6 for `google/gemma-4-31b-it`)
+- **⚡ Companion 30B Student QLoRA (`L2` Local MoE Tier)**: [`krush420/qwen3-coder-30b-sre-lora`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for `Qwen/Qwen3-Coder-30B-A3B-Instruct`, `43.00%` w/ Grounded v0.3)
 - **🪶 Companion 8B Edge Agent LoRA (`L1.5` Tier)**: [`krush420/llama3-hermes3-8b-sre-lora`](https://huggingface.co/krush420/llama3-hermes3-8b-sre-lora) (Built with Meta Llama 3 for `NousResearch/Hermes-3-Llama-3.1-8B`)
-- **⚡ Companion 30B Student QLoRA (`L2` Local MoE Tier)**: [`krush420/qwen3-coder-30b-sre-lora`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for `Qwen/Qwen3-Coder-30B-A3B-Instruct`)
 
 ---
 
@@ -122,14 +123,14 @@ tags:
 │ • revise / nudge     │ • dependency_graph        │ • page_tree / read_page │
 │ • INV-12 span drift  │ • read_tree / read_blob   │ • remember_on_page      │
 ├──────────────────────┼───────────────────────────┼─────────────────────────┤
-│ 3. 2PC HARNESS       │ 4. FRONTEND DESIGN MCP    │ 5. WORKSPACE HUB        │
-│ krusch-harness       │ krusch-frontend-mcp       │ g-krusch                │
+│ 3. 2PC & GROUNDED    │ 4. FRONTEND DESIGN MCP    │ 5. WORKSPACE HUB        │
+│ krusch-harness / GH  │ krusch-frontend-mcp       │ g-krusch                │
 │ • run (stages diff)  │ • generate_color_palette  │ • get_agent_steering    │
 │ • apply_diff (2PC)   │ • css_to_tailwind         │ • search_drive_rag      │
-│ • explain / reject   │ • canonical_templates     │ • write (.gdoc/.slides) │
+│ • Defect-only stop   │ • canonical_templates     │ • write (.gdoc/.slides) │
 ├──────────────────────┴───────────────────────────┴─────────────────────────┤
 │ 6. COGNITIVE CASCADE ROUTER (`krusch-cascade-router`)                      │
-│ • <25µs L1 fast-path -> L2 30B Student -> [L2.5: gpt-oss-120b-sre-lora]    │
+│ • <25µs L1 fast-path -> L2 30B Student -> [L2.5: gemma4-31b / 120B]        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -137,7 +138,7 @@ tags:
 1. **Native Harmony `<|channel|>commentary` Function-Calling Preservation (`agentic_tool_calling_sft` & `dpo`):** Renders multi-turn `tools` + `assistant.tool_calls` + `role: "tool"` trajectories through `gpt-oss-120b`'s native Harmony chat template and removes Wave-3's hardcoded auditor `SYSTEM` prompt, eliminating Wave-3's `30%` prose-only refusal regression on operational tasks and lifting `list_*` read-before-write chains (`179 -> 202`) to beat `120B` Stock on DolphinBench (`237/600` vs. `235/600`).
 2. **Gemini 4 Argon (`gemini-4-argon`) Golden Remediations (`argon_golden_remediations`):** Multi-file root-cause bug fixes staged through `krusch-harness` and verified against live unit test suites (`node:test` / `pytest`, exit code `0`).
 3. **Elitist Rejection-Sampled 11-Phase Code Audits (`elitist_120b_teacher`):** AST-grounded codebase audits using `krusch-git` (`search_symbols`, `dependency_graph`, `read_blob`) with verbatim `file:startLine-endLine` citations, false-positive refutation (`NOT FLAGGED`), and Zero-Finding convergence (`CLEAN_PASS`).
-4. **Lego-First Idiom Synthesis & Rule-of-3 Anti-Bloat Gate (`INV-LEGO-01..27`):** Assembling services from `@krusch/toolkit` v1.7 (35 runtime bricks + `.d.ts` declarations) and `krusch_toolkit` v1.6 (`fastapi_app`, `mcp`, `pg`, `security`), nominating `>= 3`-repo clusters via `CANDIDATE_MEETS_RULE_OF_3`, and rejecting `< 3`-repo utilities as `BELOW_THRESHOLD_DO_NOT_EXTRACT`.
+4. **Lego-First Idiom Synthesis & Rule-of-3 Anti-Bloat Gate (`INV-LEGO-01..34`):** Assembling services from `@krusch/toolkit` and `krusch_toolkit` (`fastapi_app`, `mcp`, `pg`, `security`), nominating `>= 3`-repo clusters via `CANDIDATE_MEETS_RULE_OF_3`, and rejecting `< 3`-repo utilities as `BELOW_THRESHOLD_DO_NOT_EXTRACT`.
 5. **KL-Anchored Stage-2 Preference Calibration (`48` DPO Pairs, `beta=0.1`):** Balances Referee `CLEAN_PASS` precision + P0/P1 recall pairs with `action_over_prose`, `bounded_search_no_loop`, and `benign_execution_no_false_refusal` tool-action pairs (`100.0%` preference accuracy).
 
 ---
@@ -151,11 +152,16 @@ git clone https://huggingface.co/krush420/gpt-oss-120b-sre-lora
 cd gpt-oss-120b-sre-lora
 ollama pull gpt-oss:120b
 
-# Fuse rank-16 attention LoRA into base GGUF in ~1.7s (preserves Harmony renderer & MXFP4 experts)
+# Option A (Non-destructive — keeps stock gpt-oss:120b untouched; requires ~65 GB temp disk):
 BASE_BLOB="$(ollama show --modelfile gpt-oss:120b | awk '/^FROM / {print $2}')"
-python3 fuse_lora_into_gguf.py --base-gguf "$BASE_BLOB" --adapter-gguf ./adapter.gguf --output-gguf "$BASE_BLOB"
-ollama create gpt-oss-sre:120b -f Modelfile
+python3 fuse_lora_into_gguf.py --base-gguf "$BASE_BLOB" --adapter-gguf ./adapter.gguf --output-gguf ./gpt-oss-120b-sre.gguf
+sed -i 's|^FROM .*|FROM ./gpt-oss-120b-sre.gguf|' Modelfile
+ollama create gpt-oss-sre:120b -f Modelfile && rm -f ./gpt-oss-120b-sre.gguf
 ollama run gpt-oss-sre:120b
+
+# Option B (Zero-extra-disk atomic in-place fusion for ephemeral cloud GPU VMs):
+# python3 fuse_lora_into_gguf.py --base-gguf "$BASE_BLOB" --adapter-gguf ./adapter.gguf --output-gguf "$BASE_BLOB"
+# ollama create gpt-oss-sre:120b -f Modelfile
 ```
 
 ### 2. Transformers + PEFT
@@ -199,15 +205,16 @@ vllm serve openai/gpt-oss-120b \
 
 ---
 
-## 🏆 Hermetic External Benchmark Scorecard (`96 GB` Blackwell G4, `12` Suites, `75/75` Gates)
+## 🏆 Hermetic External Benchmark Scorecard (`96 GB` Blackwell G4, `75 / 75` Gates, `49` Audit Logs)
 
-All **`40` SHA-256-pinned raw JSON audit logs** (`41` total incl. the `RouteWorks/RouterArena` PR #169 live receipt bundle) across **`325,000+`** queries/traces are published in **[`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks)** and interactive Pareto plots at **[`spaces/krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena)**:
+Full SHA-256-pinned logs (`48` staged raw JSON audit logs + `1` `RouteWorks/RouterArena` PR #169 live receipt bundle = `49` audit logs across `333,000+` queries/traces; `63` dataset files across `14` splits) are published in **[`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks)** alongside Paper #27 (**[*Return on Memory: `#1` Overall (`91.17%`), Model-Matched `GPT 5.6 Luna` (`81.50%` @ `$1.35`) & `#1` Open-Weights (`57.33%`) on Official DolphinBench*](https://krusch.dev/articles/return-on-memory-dolphinbench)**) and the cross-stack write-up (**[*How an Open-Weights Sovereign Stack Stacks Up*](https://krusch.dev/articles/how-krusch-stack-stacks-up)**):
 
 | Benchmark | Configuration Under Test | Verified Result | External Leaderboard Context |
 | :--- | :--- | :--- | :--- |
-| **DolphinBench V5 (`19` × `600` Tasks = `11,400` Traces)** | `gpt-oss-120b-sre-lora` (`Wave-4`, `Std. Harness`) + `SovereignMemoryStore` (Official `gpt-5.6-sol` Judge) | **`39.50%` (`237/600`)** (`+2` vs. `120B` `Stock` `39.17%`, **`+7` on `Morgan`** [`109/200`]) | `$0.00` local inference (`8/8` flagship archives queued across `6` families, `19/19` validated); beats `Claude Sonnet 5 + Honcho` (`35.83%` @ `$1,565.82`) & `Mem0` (`32.33%` @ `$1,830.57`); V5 leaders: `#1` Overall `Gemini 4 Argon Low` **`91.17%`** @ `$24.54`, `GPT 5.6 Luna High Std.` **`81.33%`** @ `$1.35` (`+10.67 pp` & `71.0x` cheaper than `Mem0` `70.67%` @ `$96.21`), `#1` Open-Weights `Gemma 4 31B` **`54.17%`** @ `$0.00` (UUID `288671ad-afe0-40a3-93af-b834c9bbd306`), **`Oracle@19 = 97.00%`**, `$0.00` **`Oracle@11 = 80.00%`**. |
-| **ETH SpyLab AgentDojo v1.2.2 (`1,046` Eps)** | `openai/gpt-oss-120b` + `delimitUntrustedContent` + Sink Taint Provenance + `createKruschPolicyFloor` | **`0.00%` Targeted ASR (`0/949`)** · **`69.07%` Benign / `69.02%` UUA** · **`83` floor blocks** | Eliminates `19.28%` raw ASR (`57.14%` `slack`, `52.78%` `banking`) across `100%` of `important_instructions` attacks with `0.00 pp` benign loss. |
+| **Official DolphinBench (`600/600` Tasks, `27` Runs / `16,200` Traces, `6` Families)** | `gpt-oss-120b-sre-lora` (`$0.00`), [`gemma4-31b-sre-lora`](https://huggingface.co/krush420/gemma4-31b-sre-lora) (`$0.00`), `GPT 5.6 Luna` (`Std.`, `2PC`, & `Grounded`) & `Gemini 4 Argon Low` (`$24.54`) on frozen `0o444` `SovereignMemoryStore` (`openai/gpt-5.6-sol` Judge, `8/8` flagship queued, `27/27` validated) | **`#1 Overall` `91.17%` (`547/600` @ `$24.54`) Argon Low** (`89.17%` Grounded/Med) · **Model-Matched `Luna High (+ Grounded)` `81.50%` (`489` @ `$1.35`, `30.03s`) & `Luna Low (Std.)` `76.67%` (`460` @ `$1.10`)** · **`#1 Open-Weights` `57.33%` (`344`) `gemma4-31b-sre-lora` (Wave-6 + Grounded v0.3) @ `$0.00`** · **`43.00%` (`258`) `30B` Wave-4 (+ Grounded v0.3)** · **`39.50%` (`237`) `120B` Wave-4** (`39.17%` Stock, `$0.00`) | **`+20.50 pp` above `#1` `Mem0` (`70.67%` @ `$96.21`)**; model-matched `Luna High + Grounded` **`+10.83 pp` at `71.1x` lower cost** (`Luna Oracle@5 = 91.83%`); **`Oracle@27 = 97.83%`** (`<= 2.17%` miss), **`$0.00` `Oracle@17 = 83.17%`**, Pareto `($0.00, 57.33%) -> ($1.10, 76.67%) -> ($1.35, 81.50%) -> ($24.54, 91.17%)`. |
+| **ETH SpyLab AgentDojo v1.2.2 (`1,046` Eps)** | `openai/gpt-oss-120b` + `delimitUntrustedContent` + Sink Taint Provenance + `createKruschPolicyFloor` | **`0.00%` Targeted ASR (`0/949`)** · **`69.07%` Benign / `69.02%` UUA** (Spotlighting) · **`83` floor blocks** | Eliminates `19.28%` raw ASR (`57.14%` `slack`, `52.78%` `banking`) across `100%` of `important_instructions` attacks with `0.00 pp` benign loss. |
 | **ACL 2025 CoIR (`10/10` Tasks, `162,216` Qs)** | [`krusch-git`](https://github.com/kruschdev/krusch-git) Hybrid RRF + `snowflake-arctic-embed2` (`1024d`, `8192` ctx) | **`56.40%` 10-Task Macro `NDCG@10` (`#1`)** · **`50.94%` `MRR@10`** · **`73.88%` `Recall@10`** | Across `2,389,123` unshrunk docs, exceeds all 10 CoIR Table 3 baselines incl. `Voyage-Code-002` (`56.26%`) & `E5-Mistral 7B` (`55.18%`). |
-| **BIRD-SQL (`500`) & BFCL v3 (`2,251`)** | `openai/gpt-oss-120b` + Read-Only `node:sqlite` State Grounding + `createDeferredToolBridge` (`64` MCP tools) | **`26.00% -> 40.20%` SQL EX (`1.55x`)** · **`59.88% -> 66.28%` BFCL Micro** · **`84.69%` Irrelevance** | `100%` valid SQL (`13` healed in `0.09` extra calls/query); **`-80.67%` fewer MCP schema tokens** (`29` schema repairs healed). |
-| **Aider Polyglot (`225/225`)** | `openai/gpt-oss-120b` + [`krusch-coding-harness`](https://github.com/kruschdev/krusch-coding-harness) `2PC` `Verify-on-Stop` | **`Pass@1 = 19.56%` -> `Pass@2 = 51.56%` (`116/225`)** (`72` tasks self-healed) | **Ties cloud `Claude 3.5 Sonnet` (`51.6%`)** & **beats `GPT-4o` (`23.1%`)** across C++, Go, Java, JS, Python & Rust at `$0` API cost. |
-| **ICLR 2026 BEAM (`2,000` Qs) · Routing · Legal** | `gpt-oss-120b-sre-lora` + `krusch-context-mcp` `v2.0.0` + `krusch-cascade-router` + `KruschNexus` | **`92.37%–92.58%` `100K` Recall** · **`#1` RouterBench ID/OOD `AIQ`** · **RouterArena CI `0.7263` (`#13/34`)** · **`26.74%` Legal Macro F1** | Beats `past.dev` on Contradiction Resolution (`4/4` splits), `ZeroRouter` on OOD routing, Azure/GPT-5 on RouterArena (`74.44%` @ `$0.3802/1K`, `91.43%` rob., `0` abnormal, [PR #169](https://github.com/RouteWorks/RouterArena/pull/169)), & OpenAI `3-large` + Cohere `MAUD` `R@64`. |
+| **BIRD-SQL Mini-Dev (`500/500`) & BFCL v3 (`2,251/2,251`)** | `openai/gpt-oss-120b` + Read-Only `node:sqlite` State Grounding + `createDeferredToolBridge` (`64` MCP tools) | **`26.00% → 40.20%` SQL EX (`1.55x`)** · **`59.88% → 66.28%` BFCL Micro** · **`84.69%` Irrelevance** | `100%` valid SQL (`13` healed in `0.09` extra calls/query); **`-80.67%` fewer MCP schema tokens** (`29` schema repairs healed). |
+| **Aider Polyglot (`225/225`)** | `openai/gpt-oss-120b` + [`krusch-coding-harness`](https://github.com/kruschdev/krusch-coding-harness) `2PC` `Verify-on-Stop` | **`Pass@1 = 19.56%` → `Pass@2 = 51.56%` (`116/225`)** (`72` tasks self-healed) | **Ties cloud `Claude 3.5 Sonnet` (`51.6%`)** & **beats `GPT-4o` (`23.1%`)** across C++, Go, Java, JS, Python & Rust at `$0` API cost. |
+| **Routing (`RouterBench` `73K` · `LLMRouterBench` `12.5K` · `RouterArena` `8.4K`)** | [`krusch-cascade-router`](https://github.com/kruschdev/krusch-cascade-router) (`KruschCascadeRouter` & SSE Abort) | **`#1` RouterBench ID/OOD `AIQ` (`0.7488` / `0.7695`, `-72.6%` cost)** · **`#1` LLMRouterBench Pareto (`0.4269`)** · **RouterArena CI `0.7263` (`#13/34`, `74.44%` @ `$0.3802/1K`, `91.43%` Rob., `0` Abnormal)** | Breaks Martian's OOD `ZeroRouter` ceiling; outperforms `Azure-Model-Router` (`70.37`) & `GPT-5` (`64.32`, `26.4x` cheaper) in PR #169 Run `#780`; **`-48.0%` TTFT (`880.7ms`)** on live SSE cascade. |
+| **ICLR 2026 BEAM (`2,000` Qs) · RepoBench-R (`48K`) · LegalBench-RAG (`6.9K`)** | `gpt-oss-120b-sre-lora` + `krusch-context-mcp` `v2.0.0` + `krusch-git` + `KruschNexus` | **`92.37%–92.58%` `100K` Recall** · **`19.12%` `Acc@1` / `68.58%` `Acc@5`** · **`26.74%` Legal Macro F1** | Beats `past.dev` on Contradiction Resolution (`4/4` splits), `CodeBERT`/`UniXcoder` on Py/Java `cfr`, & OpenAI `3-large` + Cohere `MAUD` `R@64`. |

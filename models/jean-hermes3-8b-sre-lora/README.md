@@ -80,9 +80,10 @@ tags:
 
 - **🛠️ KruschStack (7-Pillar 39-Tool MCP Stack)**: [`github.com/kruschdev/krusch-stack`](https://github.com/kruschdev/krusch-stack) (`npx krusch-stack init`)
 - **🤖 Jean SRE by Kruschdev (24/7 Autonomous Auditor & Distillation Harness)**: [`github.com/kruschdev/Jean-SRE-by-kruschdev`](https://github.com/kruschdev/Jean-SRE-by-kruschdev)
-- **📊 Training Dataset (`18,131` Zero-Leak SFT + DPO Records across 7 Splits)**: [`krush420/sovereign-code-audit-sft`](https://huggingface.co/datasets/krush420/sovereign-code-audit-sft)
-- **🏆 Hermetic Benchmark Audit Logs (`75/75` Gates, `40` Raw JSON + `1` PR #169 Live Receipt Audit Logs across `325,000+` Queries/Traces, incl. `19` Official DolphinBench `600` Runs / `11,400` Traces)**: [`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [`krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
-- **⚡ Companion 30B Student QLoRA (`L2` Local MoE Tier)**: [`krush420/qwen3-coder-30b-sre-lora`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for `Qwen/Qwen3-Coder-30B-A3B-Instruct`)
+- **📊 Training Dataset (`18,131+` Zero-Leak SFT + DPO Records)**: [`krush420/sovereign-code-audit-sft`](https://huggingface.co/datasets/krush420/sovereign-code-audit-sft)
+- **🏆 Hermetic Benchmark Audit Logs (`75/75` Gates, `49` Audit Logs = `48` Staged Raw JSON + `1` PR #169 Live Receipt across `333,000+` Queries/Traces, incl. `27` Official DolphinBench `600` Runs / `16,200` Traces)**: [`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [`krush420/sovereign-router-arena`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
+- **🏆 Companion 31B Dense Reasoning QLoRA (`#1 Open-Weights` `57.33%` DolphinBench)**: [`krush420/gemma4-31b-sre-lora`](https://huggingface.co/krush420/gemma4-31b-sre-lora) (Wave-6 for `google/gemma-4-31b-it`)
+- **⚡ Companion 30B Student QLoRA (`L2` Local MoE Tier)**: [`krush420/qwen3-coder-30b-sre-lora`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for `Qwen/Qwen3-Coder-30B-A3B-Instruct`, `43.00%` w/ Grounded v0.3)
 - **🧠 Companion 120B Teacher QLoRA (`L2.5` Burst Tier)**: [`krush420/gpt-oss-120b-sre-lora`](https://huggingface.co/krush420/gpt-oss-120b-sre-lora) (for `openai/gpt-oss-120b`)
 
 ---
@@ -150,14 +151,21 @@ model = PeftModel.from_pretrained(base_model, adapter_id)
 
 ---
 
-## 📊 DolphinBench V5 600-Task Controlled Ablation (`8B` `Stock` vs. `8B` Wave-4 LoRA+DPO, `Std. Harness`)
+## 📊 DolphinBench 600-Task Controlled Ablation (`8B` Edge Lift to `#1 Overall` `91.17%` Argon Scaling Law — `27` Runs, `75 / 75` Gates)
 
-| Configuration (`4.7 GB` `Q4_0` Runtime, `Std. Harness`) | Official `gpt-5.6-sol` Overall (`600`) | `Morgan` (`200`) | `Alex` (`200`) | `Riley` (`200`) | Mechanical Checks (`1,310`) | Pure Det. (`15`: Mem vs. No-Mem) |
+Full `49`-log SHA-256 provenance (`48` staged raw JSON logs + `1` PR #169 live receipt bundle; `27` DolphinBench runs / `16,200` traces across `6` model families; `Oracle@27 = 97.83%`, `$0.00` `Oracle@17 = 83.17%`, Pareto `($0.00, 57.33%) -> ($1.10, 76.67%) -> ($1.35, 81.50%) -> ($24.54, 91.17%)`) is published in **[`krush420/sovereign-g4-benchmarks`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks)** and **[Paper #27 (`Return on Memory`)](https://krusch.dev/articles/return-on-memory-dolphinbench)** (`8/8` flagship archives `queued` on `dolphinbench.ai`, `27/27` validated):
+
+| Configuration (Byte-Identical `0o444` `SovereignMemoryStore`) | Official `gpt-5.6-sol` Overall (`600`) | `Morgan` (`200`) | `Alex` (`200`) | `Riley` (`200`) | Official Grader Mech | Total Cost |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`hermes3:latest` (`8B` `Stock`)** | *`1.17%` (`7/600` local strict) / `4.50%` (`27/600`)* | `1.5%` | `0.0%` | `2.0%` | `750 / 1,310` (`57.25%`) | `0/15` (`0.0%`) vs. `1/15` (`FAIL`) |
-| **`hermes3-sre:latest` (`8B` Wave-4 LoRA+DPO)** | **`18.33%` (`110 / 600`)** (**`15.7x`**) | **`26.0%` (`52`)** | **`14.5%` (`29`)** | **`14.5%` (`29`)** | **`841 / 1,310` (`64.20%`)** | **`3/15` (`20.0%`) vs. `0/15` (`5/5 PASS`)** |
-
-> Part of the **19-run (`11,400`-trace, `6`-family, `19/19` validated, `8/8` flagship archives queued on `dolphinbench.ai`)** Sovereign DolphinBench V5 evaluation (`8B Wave-4` Queued UUID `19552654-be39-4fe0-8043-a49158582356`), anchored by `#1` Overall `Gemini 4 Argon (Low)` (`91.17%` [`547/600`] @ `$24.54`), model-matched `GPT 5.6 Luna (High, Std. Harness)` (`81.33%` [`488/600`] @ `$1.35`, `+10.67 pp` & `71.0x` cheaper than Official `#1` `Mem0` `70.67%` @ `$96.21`; `Luna Low` `76.67%` @ `$1.10`, `87.4x` cheaper), `#1` Open-Weights `Google Gemma 4 31B` (`54.17%` [`325/600`] @ `$0.00`, Queued UUID `288671ad-afe0-40a3-93af-b834c9bbd306`), `Oracle@19 = 97.00%` (`582/600`), and `$0.00` Open-Weights `Oracle@11 = 80.00%` (`480/600`).
+| **`hermes3:latest` (`8B` Stock)** | *`1.17%` (`7/600` local strict) / `4.50%` (`27/600`)* | `1.5%` | `0.0%` | `2.0%` | `750 / 1,310` *(local)* | `$0.00` |
+| **`hermes3-sre:latest` (`8B` Wave-4 LoRA+DPO, `Std. Harness`)** | **`18.33%` (`110 / 600`)** (**`15.7x` lift**) | **`26.0%` (`52`)** | **`14.5%` (`29`)** | **`14.5%` (`29`)** | **`264 / 1,468` (`17.98%`)** | **`$0.00`** |
+| **`Qwen3-Coder-30B-A3B` (`30B` Wave-4, `Std.` / `+ Grounded v0.3`)** | **`42.67%` (`256`) -> `43.00%` (`258 / 600`)** (`58.50%` `Oracle@3`) | `62.5%` (`125`) | `31.5%` (`63`) | `35.0%` (`70`) | `613 / 1,364` (`44.94%`) | **`$0.00`** |
+| **`Google Gemma 4 31B` (`31B` Stock, Queued Flagship)** | `54.17%` (`325 / 600`) | `72.0%` (`144`) | `47.5%` (`95`) | `43.0%` (`86`) | `792 / 1,363` (`58.11%`) | `$0.00` |
+| **[`gemma4-31b-sre-lora`](https://huggingface.co/krush420/gemma4-31b-sre-lora) (`Wave-6 + Grounded v0.3`, `#1 Open-Weights`)** | **`57.33%` (`344 / 600`, `71.83%` `Oracle@6`)** | **`74.5%` (`149`)** | **`51.5%` (`103`)** | **`46.0%` (`92`)** | **`835 / 1,364` (`61.22%`)** | **`$0.00`** |
+| **`GPT 5.6 Luna (Low, Std. Harness)` (Pareto Vertex 2)** | **`76.67%` (`460 / 600`, `+6.00 pp` vs. `#1` `Mem0`, `87.4x` cheaper)** | `85.0%` (`170`) | `72.5%` (`145`) | `72.5%` (`145`) | `1,044 / 1,323` (`78.91%`) | **`$1.10`** |
+| **`GPT 5.6 Luna (High, + Grounded)` (Model-Matched SOTA, Pareto Vertex 3)** | **`81.50%` (`489 / 600`, `+10.83 pp` vs. `#1` `Mem0`, `71.1x` cheaper)** | **`87.0%` (`174`)** | **`78.5%` (`157`)** | **`79.0%` (`158`)** | **`1,093 / 1,321` (`82.74%`)** | **`$1.35`** |
+| **`Gemini 4 Argon (Medium / Low Grounded)` (`L3` Frontier Reader, `#2 Overall`)** | **`89.17%` (`535 / 600`, `+18.50 pp` vs. `#1` `Mem0`)** | `92.0%` (`184`) | `87.0%` (`174`) | `88.5%` (`177`) | `1,193 / 1,329` (`89.77%`) | `$23.92–$24.57` |
+| **`Gemini 4 Argon (Low)` (`L3` Frontier Reader, `#1 Overall`)** | **`91.17%` (`547 / 600`, `+20.50 pp` vs. `#1` `Mem0`)** | **`95.5%` (`191`)** | **`89.5%` (`179`)** | **`88.5%` (`177`)** | **`1,221 / 1,324` (`92.22%`)** | **`$24.54`** |
 
 ---
 

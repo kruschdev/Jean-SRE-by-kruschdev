@@ -170,7 +170,7 @@ const HOMELAB_ROOT_TARGETS = [
     '@homelab/configs'           // Fleet model & routing configurations
 ];
 
-const ARCHIVED_OR_IGNORED_PROJECT_DIRS = new Set(['archive', '_archive', 'krusch-pg-agent']);
+const ARCHIVED_OR_IGNORED_PROJECT_DIRS = new Set(['archive', '_archive', 'krusch-pg-agent', 'LEANN']);
 
 // Archived projects intentionally retained in Jean SRE rotation so bug fixes continue generating SFT training data
 const ARCHIVED_ROTATION_PROJECTS = ['krusch-dbos-mcp'];
@@ -2430,13 +2430,13 @@ function buildCleanChildProjectEnv(projectPath, binPaths, isTestCmd = true) {
             delete childEnv[key];
         }
     }
+    const isToolkitLib = projectPath && basename(projectPath) === 'lib';
     return {
         ...childEnv,
         PATH: binPaths,
         CI: 'true',
         NODE_ENV: isTestCmd ? 'test' : (childEnv.NODE_ENV || 'development'),
-        MOCK_LLM: '1',
-        MOCK_EMBEDDINGS: '1',
+        ...(isToolkitLib ? {} : { MOCK_LLM: '1', MOCK_EMBEDDINGS: '1' }),
         KRUSCH_EPHEMERAL: '1',
         PYTHONPATH: [
             'src',
@@ -2495,9 +2495,9 @@ function runProjectVerificationSuite(projectPath, { force = false } = {}) {
             join(projectPath, 'mcp_env', 'bin', 'pytest'),
             '/opt/venv/bin/pytest',
             join(HOMELAB_ROOT, '.venv', 'bin', 'pytest'),
-            join(HOMELAB_ROOT, 'lib-py', '.venv', 'bin', 'pytest'),
             join(HOMELAB_ROOT, 'projects', 'krusch-law', '.venv', 'bin', 'pytest'),
             join(HOMELAB_ROOT, 'projects', 'krusch-nexus', '.venv', 'bin', 'pytest'),
+            join(HOMELAB_ROOT, 'lib-py', '.venv', 'bin', 'pytest'),
             '/app/lib-py/.venv/bin/pytest'
         ];
         const isRunnablePytest = (candidatePath) => {
@@ -2553,7 +2553,7 @@ function runProjectVerificationSuite(projectPath, { force = false } = {}) {
         const stdout = execSync(testCmd, {
             cwd: projectPath,
             encoding: 'utf8',
-            timeout: 90000,
+            timeout: 180000,
             maxBuffer: 4 * 1024 * 1024,
             stdio: ['ignore', 'pipe', 'pipe'],
             env: buildCleanChildProjectEnv(projectPath, binPaths, true)

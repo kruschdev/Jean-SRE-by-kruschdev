@@ -312,11 +312,11 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
         }
     });
 
-    test('Wave-4 harvestAgenticToolCallingDatasets generates clean-room multi-turn tool-calling SFT & DPO splits and role-neutral Modelfiles', async () => {
+    test('Wave-6 harvestAgenticToolCallingDatasets generates clean-room multi-turn tool-calling SFT & DPO splits and role-neutral Modelfiles', async () => {
         const { harvestAgenticToolCallingDatasets } = await import(
             '../scripts/harvest_agentic_tool_calling.js'
         );
-        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jean-wave4-ag-'));
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jean-wave6-ag-'));
         try {
             const sftOutPath = path.join(tmpDir, 'agentic_sft.jsonl');
             const dpoOutPath = path.join(tmpDir, 'agentic_dpo.jsonl');
@@ -327,24 +327,27 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
             });
 
             assert.equal(res.ok, true);
-            assert.equal(res.data.counts.sftTotal, 64);
+            assert.equal(res.data.counts.sftTotal, 76);
             assert.equal(res.data.counts.sreMcpChains, 32);
-            assert.equal(res.data.counts.workspaceToolChains, 32);
-            assert.equal(res.data.counts.dpoTotal, 18);
+            assert.equal(res.data.counts.workspaceToolChains, 44);
+            assert.equal(res.data.counts.dpoTotal, 34);
             assert.equal(res.data.counts.dpoActionVsProse, 8);
             assert.equal(res.data.counts.dpoLoopTermination, 6);
             assert.equal(res.data.counts.dpoNonRefusal, 4);
+            assert.equal(res.data.counts.dpoVerbatimPreservation, 6);
+            assert.equal(res.data.counts.dpoPartialBriefingExhaustive, 10);
 
             const rawSft = fs.readFileSync(sftOutPath, 'utf8');
             const rawDpo = fs.readFileSync(dpoOutPath, 'utf8');
 
             // Clean-room check: 0 DolphinBench identifiers, personas, or mock-app schemas
-            const cleanRoomForbiddenRe = /\b(?:dolphinbench|search_persona_memory|morgan|riley)\b/i;
-            assert.equal(cleanRoomForbiddenRe.test(rawSft), false, 'Unexpected benchmark term in Wave-4 SFT');
-            assert.equal(cleanRoomForbiddenRe.test(rawDpo), false, 'Unexpected benchmark term in Wave-4 DPO');
+            const cleanRoomForbiddenRe = /\b(?:dolphinbench|search_persona_memory|morgan|riley|load_bearing_facts|expected_tool_calls|assertions)\b|facts\.yaml/i;
+            assert.equal(cleanRoomForbiddenRe.test(rawSft), false, 'Unexpected benchmark term in Wave-6 SFT');
+            assert.equal(cleanRoomForbiddenRe.test(rawDpo), false, 'Unexpected benchmark term in Wave-6 DPO');
 
             const sftRows = rawSft.trim().split('\n').map((l) => JSON.parse(l));
-            assert.equal(sftRows.length, 64);
+            assert.equal(sftRows.length, 76);
+            let wave6SftCount = 0;
             for (const row of sftRows) {
                 assert.ok(Array.isArray(row.tools) && row.tools.length >= 2, `Expected tools array on ${row.id}`);
                 let sawToolCall = false;
@@ -366,10 +369,32 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
                     }
                 }
                 assert.equal(sawToolCall, true, `Expected at least 1 tool_call in ${row.id}`);
+
+                if (row.id.includes('-wave6-')) {
+                    wave6SftCount++;
+                    assert.equal(/\balex\b/i.test(JSON.stringify(row)), false);
+                    assert.ok(
+                        row.messages[0].content.includes('[SOVEREIGN MEMORY BRIEFING'),
+                        `Expected partial briefing header on ${row.id}`
+                    );
+                    const assistantToolTurns = row.messages.filter(
+                        (m) => m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length === 1
+                    );
+                    assert.equal(assistantToolTurns.length, 2, `Expected gap-search -> action chain on ${row.id}`);
+                    assert.equal(assistantToolTurns[0].tool_calls[0].function.name, 'query_memory_notes');
+                    const actionArgsJson = JSON.stringify(assistantToolTurns[1].tool_calls[0].function.arguments);
+                    assert.ok(
+                        actionArgsJson.length >= 450,
+                        `Expected exhaustive >=450 char tool argument on ${row.id}, got ${actionArgsJson.length}`
+                    );
+                }
             }
+            assert.equal(wave6SftCount, 12);
 
             const dpoRows = rawDpo.trim().split('\n').map((l) => JSON.parse(l));
-            assert.equal(dpoRows.length, 18);
+            assert.equal(dpoRows.length, 34);
+            let wave6GapPairs = 0;
+            let wave6ExhaustivePairs = 0;
             for (const pair of dpoRows) {
                 assert.ok(Array.isArray(pair.tools) && pair.tools.length >= 1, `Expected tools array on ${pair.id}`);
                 assert.ok(Array.isArray(pair.prompt) && pair.prompt.length >= 2);
@@ -383,7 +408,23 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
                         assert.equal(typeof turn.tool_calls[0].function.arguments, 'object');
                     }
                 }
+                if (pair.id.startsWith('dpo-tool-wave6-gap-')) {
+                    wave6GapPairs++;
+                    assert.equal(/\balex\b/i.test(JSON.stringify(pair)), false);
+                    assert.equal(pair.chosen[0].tool_calls[0].function.name, 'query_memory_notes');
+                    assert.notEqual(pair.rejected[0].tool_calls[0].function.name, 'query_memory_notes');
+                }
+                if (pair.id.startsWith('dpo-tool-wave6-exhaustive-')) {
+                    wave6ExhaustivePairs++;
+                    assert.equal(/\balex\b/i.test(JSON.stringify(pair)), false);
+                    const chosenLen = JSON.stringify(pair.chosen[0].tool_calls[0].function.arguments).length;
+                    const rejectedLen = JSON.stringify(pair.rejected[0].tool_calls[0].function.arguments).length;
+                    assert.ok(chosenLen >= 480, `Expected chosen >=480 chars on ${pair.id}, got ${chosenLen}`);
+                    assert.ok(chosenLen > rejectedLen * 2.5, `Expected chosen >> rejected detail on ${pair.id}`);
+                }
             }
+            assert.equal(wave6GapPairs, 5);
+            assert.equal(wave6ExhaustivePairs, 5);
 
             assert.equal(verifyZeroLeaks(sftOutPath).passed, true);
             assert.equal(verifyZeroLeaks(dpoOutPath).passed, true);
@@ -420,7 +461,7 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
                     'assert "MEMORY: Room C" in rendered and "<tools>" in rendered and "<tool_call>" in rendered and "<tool_response>" in rendered',
                     'assert rendered.endswith("<|im_start|>assistant\\n")',
                     `dpo_recs = th.read_rendered_dpo_records([Path(${JSON.stringify(path.join(projectRoot, 'data/distillation/referee_calibration_dpo.jsonl'))}), Path(${JSON.stringify(path.join(projectRoot, 'data/distillation/agentic_tool_calling_dpo.jsonl'))})])`,
-                    'assert len(dpo_recs) == 30',
+                    'assert len(dpo_recs) == 46',
                     'with tempfile.TemporaryDirectory() as td:',
                     '    mf = th.write_ollama_modelfile(Path(td)).read_text()',
                     '    assert "else if .System" not in mf',
@@ -434,6 +475,283 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
         );
         const parsed = JSON.parse(out.trim());
         assert.equal(parsed.ok, true);
-        assert.equal(parsed.dpo, 30);
+        assert.equal(parsed.dpo, 46);
+    });
+
+    test('Gemma-4-31B Wave-6 trainer anchors trl>=1.0 DPO ref adapter in aligned BF16 and cleans ref artifacts before save', async () => {
+        const { execFileSync } = await import('node:child_process');
+        const pyScript = `
+import json, sys, tempfile
+from pathlib import Path
+sys.path.insert(0, ${JSON.stringify(path.join(projectRoot, 'scripts'))})
+import train_gemma4_31b_qlora_g4 as tg4
+
+class FakeTensor:
+    def __init__(self, vals, dtype="torch.bfloat16", device="cuda:0", requires_grad=True):
+        self.vals = [float(v) for v in vals]
+        self.dtype = dtype
+        self.device = device
+        self.requires_grad = requires_grad
+    @property
+    def data(self):
+        return self
+    @data.setter
+    def data(self, other):
+        self.vals = list(other.vals)
+        self.dtype = other.dtype
+        self.device = other.device
+    def detach(self):
+        return FakeTensor(self.vals, dtype=self.dtype, device=self.device, requires_grad=False)
+    def to(self, device=None, dtype=None):
+        return FakeTensor(self.vals, dtype=dtype or self.dtype, device=device or self.device, requires_grad=self.requires_grad)
+    def clone(self):
+        return FakeTensor(self.vals, dtype=self.dtype, device=self.device, requires_grad=self.requires_grad)
+    def copy_(self, other):
+        self.vals = list(other.vals)
+        return self
+    def requires_grad_(self, flag):
+        self.requires_grad = bool(flag)
+        return self
+    def float(self):
+        return FakeTensor(self.vals, dtype="torch.float32", device=self.device, requires_grad=False)
+    def __sub__(self, other):
+        return FakeTensor([a - b for a, b in zip(self.vals, other.vals)], dtype=self.dtype, device=self.device, requires_grad=False)
+    def __pow__(self, p):
+        return FakeTensor([a ** p for a in self.vals], dtype=self.dtype, device=self.device, requires_grad=False)
+    def abs(self):
+        return FakeTensor([abs(a) for a in self.vals], dtype=self.dtype, device=self.device, requires_grad=False)
+    def max(self):
+        return FakeScalar(max(self.vals) if self.vals else 0.0)
+    def sum(self):
+        return FakeScalar(sum(self.vals))
+
+class FakeScalar:
+    def __init__(self, v):
+        self.v = float(v)
+    def item(self):
+        return self.v
+
+class FakePeftModel:
+    def __init__(self, with_ref=True):
+        self.peft_config = {"default": {"r": 16}}
+        self.active_adapter = "default"
+        self._params = {
+            "base_model.model.language_model.layers.0.self_attn.q_proj.lora_A.default.weight": FakeTensor([1.5, -2.0], dtype="torch.bfloat16", device="cuda:0", requires_grad=True),
+            "base_model.model.language_model.layers.0.self_attn.q_proj.lora_B.default.weight": FakeTensor([0.25, 0.75], dtype="torch.bfloat16", device="cuda:0", requires_grad=True),
+        }
+        if with_ref:
+            self.peft_config["ref"] = {"r": 16}
+            # Simulate trl 1.17.1 bug: ref left in float32 with unaligned/zero weights
+            self._params["base_model.model.language_model.layers.0.self_attn.q_proj.lora_A.ref.weight"] = FakeTensor([0.0, 0.0], dtype="torch.float32", device="cuda:0", requires_grad=False)
+            self._params["base_model.model.language_model.layers.0.self_attn.q_proj.lora_B.ref.weight"] = FakeTensor([0.0, 0.0], dtype="torch.float32", device="cuda:0", requires_grad=False)
+    def named_parameters(self):
+        return list(self._params.items())
+    def add_adapter(self, name, cfg):
+        self.peft_config[name] = dict(cfg)
+        for k, v in list(self._params.items()):
+            if ".default." in k:
+                self._params[k.replace(".default.", f".{name}.")] = FakeTensor([0.0 for _ in v.vals], dtype="torch.float32", device=v.device, requires_grad=False)
+    def set_adapter(self, name):
+        self.active_adapter = name
+    def delete_adapter(self, name):
+        self.peft_config.pop(name, None)
+        for k in [k for k in self._params if f".{name}." in k]:
+            del self._params[k]
+
+class FakeDPOTrainer:
+    def __init__(self, model, ref_adapter_name=None):
+        self.model = model
+        self.ref_adapter_name = ref_adapter_name
+
+# Case 1: trl 1.17.1 created 'ref' in float32 with stale weights
+m1 = FakePeftModel(with_ref=True)
+snap1 = tg4.snapshot_peft_default_adapter(m1)
+# Simulate DPOTrainer mutating default before sync check
+t1 = FakeDPOTrainer(m1, ref_adapter_name="ref")
+meta1 = tg4.verify_and_sync_trl_ref_adapter(t1, snap1)
+assert meta1["ref_adapter_anchored"] is True
+assert meta1["ref_adapter_name"] == "ref"
+assert meta1["synced_tensors"] == 2
+assert meta1["ref_dtype"] == "torch.bfloat16"
+assert meta1["max_diff_vs_sft"] == 0.0
+ref_a = m1._params["base_model.model.language_model.layers.0.self_attn.q_proj.lora_A.ref.weight"]
+def_a = m1._params["base_model.model.language_model.layers.0.self_attn.q_proj.lora_A.default.weight"]
+assert ref_a.vals == [1.5, -2.0] and ref_a.dtype == "torch.bfloat16" and ref_a.requires_grad is False
+assert def_a.requires_grad is True and m1.active_adapter == "default"
+
+# Case 2: trl trainer with ref_adapter_name=None & missing 'ref' -> materialized & bound
+m2 = FakePeftModel(with_ref=False)
+snap2 = tg4.snapshot_peft_default_adapter(m2)
+t2 = FakeDPOTrainer(m2, ref_adapter_name=None)
+meta2 = tg4.verify_and_sync_trl_ref_adapter(t2, snap2)
+assert meta2["ref_adapter_anchored"] is True
+assert t2.ref_adapter_name == "ref"
+assert "ref" in m2.peft_config
+
+with tempfile.TemporaryDirectory() as td:
+    td_path = Path(td)
+    (td_path / "ref").mkdir()
+    (td_path / "ref" / "adapter_model.safetensors").write_text("stale")
+    cleaned = tg4.cleanup_peft_ref_adapters(m2, td_path)
+    assert "adapter:ref" in cleaned and "dir:ref" in cleaned
+    assert "ref" not in m2.peft_config
+    assert not (td_path / "ref").exists()
+
+print(json.dumps({"ok": True, "meta1": meta1, "cleaned": cleaned}))
+`;
+        const out = execFileSync('python3', ['-c', pyScript], { encoding: 'utf8' });
+        const parsed = JSON.parse(out.trim());
+        assert.equal(parsed.ok, true);
+        assert.equal(parsed.meta1.ref_adapter_anchored, true);
+        assert.equal(parsed.meta1.ref_adapter_name, 'ref');
+        assert.equal(parsed.meta1.ref_dtype, 'torch.bfloat16');
+    });
+
+    test('Qwen3-Coder-30B Wave-6 trainer maps pre-tool reasoning, masks strictly ChatML assistant spans, and anchors BF16 DPO ref adapter', async () => {
+        const { execFileSync } = await import('node:child_process');
+        const pyScript = `
+import json, sys, tempfile
+from pathlib import Path
+sys.path.insert(0, ${JSON.stringify(path.join(projectRoot, 'scripts'))})
+import train_qwen3_30b_qlora_g4 as tq3
+
+orig_argv = list(sys.argv)
+sys.argv = ["train_qwen3_30b_qlora_g4.py"]
+try:
+    args = tq3.parse_args()
+finally:
+    sys.argv = orig_argv
+assert args.mode == "sft_dpo"
+assert args.lora_r == 16 and args.lora_alpha == 16
+assert abs(args.lr - 5e-5) < 1e-12
+assert abs(args.dpo_lr - 5e-6) < 1e-12
+assert abs(args.dpo_beta - 0.2) < 1e-12
+assert args.max_samples == 460
+assert args.agentic_oversample == 4
+assert args.agentic_dpo_oversample == 3
+
+# 1. Pre-tool reasoning maps cleanly to content before <tool_call> without <think> tags
+cleaned_tc = tq3._clean_message({
+    "role": "assistant",
+    "content": "",
+    "thinking": "Partial briefing lacks the February closeout note; query memory first.",
+    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "query_memory_notes", "arguments": {"query": "february closeout"}}}]
+})
+assert cleaned_tc["content"] == "Partial briefing lacks the February closeout note; query memory first."
+assert "<think>" not in cleaned_tc["content"]
+assert cleaned_tc["tool_calls"][0]["function"]["name"] == "query_memory_notes"
+
+cleaned_inline = tq3._clean_message({
+    "role": "assistant",
+    "content": "<think>Check closeout status</think>",
+    "tool_calls": [{"id": "c2", "type": "function", "function": {"name": "get_pr", "arguments": "{\\"pr_id\\": 42}"}}]
+})
+assert cleaned_inline["content"] == "Check closeout status"
+assert cleaned_inline["tool_calls"][0]["function"]["arguments"] == {"pr_id": 42}
+
+cleaned_final = tq3._clean_message({
+    "role": "assistant",
+    "content": "Final verified status report.",
+    "thinking": "Internal scratchpad"
+})
+assert cleaned_final["content"] == "Final verified status report."
+
+# 2. QwenChatMLAssistantOnlyCollator._compute_assistant_char_spans selects strictly assistant turns
+sample_chatml = (
+    "<|im_start|>system\\nYou are an assistant.\\n\\n# Tools\\n<tools>\\n<function><name>query_memory_notes</name></function>\\n</tools><|im_end|>\\n"
+    "<|im_start|>user\\nSummarize the project status.<|im_end|>\\n"
+    "<|im_start|>assistant\\nNeed February closeout.\\n<tool_call>\\n<function=query_memory_notes>\\n<parameter=query>\\ncloseout\\n</parameter>\\n</function>\\n</tool_call><|im_end|>\\n"
+    "<|im_start|>user\\n<tool_response>\\n{\\"status\\": \\"closed_internal_only\\"}\\n</tool_response>\\n<|im_end|>\\n"
+    "<|im_start|>assistant\\nProject is closed for internal use only; no customer exposure authorized.<|im_end|>\\n"
+)
+spans = tq3.QwenChatMLAssistantOnlyCollator._compute_assistant_char_spans(sample_chatml)
+assert len(spans) == 2
+s0 = sample_chatml[spans[0][0]:spans[0][1]]
+s1 = sample_chatml[spans[1][0]:spans[1][1]]
+assert s0.startswith("Need February closeout.") and s0.endswith("</tool_call><|im_end|>")
+assert s1 == "Project is closed for internal use only; no customer exposure authorized.<|im_end|>"
+for sp in (s0, s1):
+    assert "<|im_start|>system" not in sp
+    assert "<|im_start|>user" not in sp
+    assert "<tool_response>" not in sp
+    assert "<tools>" not in sp
+
+# 3. BF16 DPO ref adapter anchoring & cleanup
+class FakeScalar:
+    def __init__(self, v): self.v = float(v)
+    def item(self): return self.v
+
+class FakeTensor:
+    def __init__(self, vals, dtype="torch.bfloat16", device="cuda:0", requires_grad=True):
+        self.vals = [float(v) for v in vals]
+        self.dtype = dtype
+        self.device = device
+        self.requires_grad = requires_grad
+    @property
+    def data(self): return self
+    @data.setter
+    def data(self, other):
+        self.vals = list(other.vals)
+        self.dtype = other.dtype
+        self.device = other.device
+    def detach(self): return FakeTensor(self.vals, dtype=self.dtype, device=self.device, requires_grad=False)
+    def to(self, device=None, dtype=None): return FakeTensor(self.vals, dtype=dtype or self.dtype, device=device or self.device, requires_grad=self.requires_grad)
+    def clone(self): return FakeTensor(self.vals, dtype=self.dtype, device=self.device, requires_grad=self.requires_grad)
+    def copy_(self, other): self.vals = list(other.vals); return self
+    def requires_grad_(self, flag): self.requires_grad = bool(flag); return self
+    def float(self): return FakeTensor(self.vals, dtype="torch.float32", device=self.device, requires_grad=False)
+    def __sub__(self, other): return FakeTensor([a - b for a, b in zip(self.vals, other.vals)], dtype=self.dtype, device=self.device, requires_grad=False)
+    def __pow__(self, p): return FakeTensor([a ** p for a in self.vals], dtype=self.dtype, device=self.device, requires_grad=False)
+    def abs(self): return FakeTensor([abs(a) for a in self.vals], dtype=self.dtype, device=self.device, requires_grad=False)
+    def max(self): return FakeScalar(max(self.vals) if self.vals else 0.0)
+    def sum(self): return FakeScalar(sum(self.vals))
+
+class FakePeftModel:
+    def __init__(self):
+        self.peft_config = {"default": {"r": 16}, "ref": {"r": 16}}
+        self.active_adapter = "default"
+        self._params = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.default.weight": FakeTensor([1.25, -0.5], dtype="torch.bfloat16"),
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.default.weight": FakeTensor([0.5, 0.25], dtype="torch.bfloat16"),
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.ref.weight": FakeTensor([0.0, 0.0], dtype="torch.float32", requires_grad=False),
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.ref.weight": FakeTensor([0.0, 0.0], dtype="torch.float32", requires_grad=False),
+        }
+    def named_parameters(self): return list(self._params.items())
+    def set_adapter(self, name): self.active_adapter = name
+    def delete_adapter(self, name):
+        self.peft_config.pop(name, None)
+        for k in [k for k in self._params if f".{name}." in k]:
+            del self._params[k]
+
+class FakeDPOTrainer:
+    def __init__(self, model):
+        self.model = model
+        self.ref_adapter_name = "ref"
+
+pm = FakePeftModel()
+snap = tq3.snapshot_peft_default_adapter(pm)
+meta = tq3.verify_and_sync_trl_ref_adapter(FakeDPOTrainer(pm), snap)
+assert meta["ref_adapter_anchored"] is True
+assert meta["synced_tensors"] == 2
+assert meta["ref_dtype"] == "torch.bfloat16"
+assert meta["max_diff_vs_sft"] == 0.0
+
+with tempfile.TemporaryDirectory() as td:
+    td_path = Path(td)
+    (td_path / "ref").mkdir()
+    cleaned = tq3.cleanup_peft_ref_adapters(pm, td_path)
+    assert "adapter:ref" in cleaned and "dir:ref" in cleaned
+    mf = tq3.write_ollama_modelfile(td_path).read_text()
+    assert not any(l.startswith("SYSTEM ") for l in mf.splitlines())
+    assert "PARAMETER num_ctx 16384" in mf
+
+print(json.dumps({"ok": True, "spans": len(spans), "meta": meta}))
+`;
+        const out = execFileSync('python3', ['-c', pyScript], { encoding: 'utf8' });
+        const parsed = JSON.parse(out.trim());
+        assert.equal(parsed.ok, true);
+        assert.equal(parsed.spans, 2);
+        assert.equal(parsed.meta.ref_adapter_anchored, true);
     });
 });
+

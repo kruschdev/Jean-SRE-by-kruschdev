@@ -66,7 +66,7 @@ def bf16_bytes_to_f32_bytes(raw: bytes) -> bytes:
 
 def map_peft_tensor_name(hf_name: str) -> str:
     m = re.match(
-        r"^(?:base_model\.model\.)?model\.layers\.(\d+)\.([a-z_]+\.[a-z_]+)\.(lora_[AB])\.weight$",
+        r"^(?:base_model\.model\.)?model\.(?:language_model\.)?layers\.(\d+)\.([a-z_]+\.[a-z_]+)\.(lora_[AB])\.weight$",
         hf_name,
     )
     if not m:

@@ -38,3 +38,7 @@ src/test_sanitize.js
 src/test_all_tools.mjs
 scripts/run_close_bridge.js
 scripts/run_continue_bridge.js
+scripts/run_*_g4.sh
+scripts/resume_*_eval.sh
+models/jean-qwen3-30b-sre-lora-wave6/
+spec.md

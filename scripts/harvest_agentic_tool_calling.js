@@ -1926,6 +1926,419 @@ function buildWorkspaceToolChains(nowIso) {
         });
     });
 
+    // Wave-6: 12 Partial-Briefing -> Targeted Follow-Up Search -> Exhaustive 500-Char Tool-Argument chains
+    const wave6PartialBriefingSpecs = [
+        {
+            slug: 'wave6-valkey-rollout-closeout-doc',
+            partialBriefing: [
+                '[2026-01-14] Kickoff for Valkey Session Cache rollout: Elena Vance owns gateway routing and Marcus Chen owns persistence tuning; initial target p99 read latency is <= 4.0ms with dual-write shadow mode enabled.',
+                '[2026-02-02] Mid-stream update on Valkey Session Cache: 50% canary hit memory fragmentation on payloads > 64KB, so Marcus Chen enabled zstd compression for values >= 16KB and paused 100% cutover pending soak results.'
+            ].join('\n'),
+            user: 'Create the final closeout summary document in `/ops/retros` titled `Valkey Session Cache Rollout Closeout` covering the full timeline, metrics, and guardrails.',
+            memQ: 'Valkey Session Cache closeout final cutover outcome exception',
+            memThink: 'The `[SOVEREIGN MEMORY BRIEFING]` covers the Jan 14 kickoff and Feb 2 50% canary pause, but is missing the final 100% cutover outcome and any permanent exclusions. Query `query_memory_notes` for the Valkey closeout record before creating the document.',
+            memRes: [
+                {
+                    date: '2026-02-19',
+                    text: 'Valkey Session Cache closeout signed off by Elena Vance and Marcus Chen: 100% production cutover completed Feb 18 at 2.3ms p99 read latency and 99.98% hit rate. Exception: OAuth PKCE state tokens MUST remain in PostgreSQL (`auth_pkce_state`) and must NOT be stored in Valkey.'
+                }
+            ],
+            tool: 'create_workspace_doc',
+            args: {
+                title: 'Valkey Session Cache Rollout Closeout',
+                folder: '/ops/retros',
+                body_markdown: [
+                    '# Valkey Session Cache Rollout Closeout',
+                    '',
+                    '- **Owners**: Elena Vance (gateway routing) and Marcus Chen (persistence & compression tuning).',
+                    '- **Chronological Milestones**:',
+                    '  - **2026-01-14 (Kickoff)**: Launched dual-write shadow mode targeting `<= 4.0ms` p99 read latency.',
+                    '  - **2026-02-02 (50% Canary Pivot)**: Resolved >64KB payload fragmentation by enabling `zstd` compression at `>= 16KB` before resuming rollout.',
+                    '  - **2026-02-18 / 2026-02-19 (100% Cutover & Sign-Off)**: Completed full production cutover achieving `2.3ms` p99 read latency and `99.98%` cache hit rate.',
+                    '- **Non-Negotiable Scope Constraint**: OAuth PKCE state tokens MUST remain in PostgreSQL (`auth_pkce_state`) and must NOT be migrated to Valkey.'
+                ].join('\n'),
+                tags: ['valkey', 'closeout', 'retro']
+            },
+            actThink: 'Combine the Jan 14 kickoff, Feb 2 zstd >=16KB canary fix, and Feb 18/19 100% cutover metrics (2.3ms p99, 99.98% hit rate) plus the explicit negative constraint keeping OAuth PKCE state tokens in PostgreSQL into `create_workspace_doc`.',
+            res: { ok: true, doc_id: 'doc_valkey_closeout_33', path: '/ops/retros/Valkey Session Cache Rollout Closeout' },
+            final: 'Created `/ops/retros/Valkey Session Cache Rollout Closeout` covering the Jan 14 kickoff, Feb 2 zstd (`>= 16KB`) canary fix, Feb 18/19 full cutover (`2.3ms` p99, `99.98%` hit rate), and the PostgreSQL-only guardrail for OAuth PKCE state tokens.'
+        },
+        {
+            slug: 'wave6-billing-webhook-status-post',
+            partialBriefing: [
+                '[2026-01-20] Q1 Billing Webhook v2 migration started by Priya Nair; legacy HMAC-SHA1 endpoints deprecated for standard merchants with initial cutover date set to Feb 15.',
+                '[2026-02-09] Billing Webhook v2 mid-sprint check: 88 of 94 merchants migrated to Ed25519 signatures; 6 enterprise ERP accounts requested a 10-day window due to SAP middleware freeze.'
+            ].join('\n'),
+            user: 'Post the final Q1 Billing Webhook v2 migration closeout update to `#platform-status` with subject `Billing Webhook v2 Migration Complete`.',
+            memQ: 'Billing Webhook v2 migration final closeout ERP SAP legacy endpoint',
+            memThink: 'The briefing stops at the Feb 9 mid-sprint check (88/94 migrated, 6 ERP accounts pending). I need the final post-Feb 15 closeout outcome and any legacy endpoint retention rules before posting to `#platform-status`.',
+            memRes: [
+                {
+                    date: '2026-02-24',
+                    text: 'Billing Webhook v2 final closeout (Priya Nair & Devon Brooks): 93 of 94 merchants live on Ed25519 with 0.00% dropped deliveries over 72h soak; 1 enterprise account (Northstar Rail) granted written waiver until Mar 31 on isolated `/v1/erp-legacy` ingress. Do NOT disable `/v1/erp-legacy` or rotate `ERP_LEGACY_HMAC_SECRET` before Apr 1.'
+                }
+            ],
+            tool: 'send_team_notification',
+            args: {
+                channel: 'platform-status',
+                subject: 'Billing Webhook v2 Migration Complete',
+                message: [
+                    'Q1 Billing Webhook v2 Migration Closeout (Owners: Priya Nair, Devon Brooks):',
+                    '- Jan 20 Kickoff -> Feb 9 Check: Progressed from legacy HMAC-SHA1 deprecation to 88/94 merchants on Ed25519 while accommodating the SAP ERP freeze.',
+                    '- Feb 24 Final Outcome: 93/94 merchants are live on Ed25519 with 0.00% dropped deliveries across the 72-hour production soak.',
+                    '- Approved Exception & Negative Guardrail: Northstar Rail (1/94) holds a written waiver through Mar 31 on isolated `/v1/erp-legacy`; do NOT disable `/v1/erp-legacy` or rotate `ERP_LEGACY_HMAC_SECRET` prior to Apr 1.'
+                ].join('\n')
+            },
+            actThink: 'Synthesize the Jan 20 kickoff, Feb 9 88/94 checkpoint, and Feb 24 93/94 Ed25519 closeout (0.00% drops over 72h) along with Northstar Rail\'s Mar 31 waiver and the negative guardrail protecting `/v1/erp-legacy` and `ERP_LEGACY_HMAC_SECRET` until Apr 1.',
+            res: { ok: true, message_id: 'msg_plat_status_34' },
+            final: 'Posted the `Billing Webhook v2 Migration Complete` closeout summary to `#platform-status`, including the 93/94 Ed25519 cutover, 72h zero-drop soak, and the Apr 1 hold on `/v1/erp-legacy` for Northstar Rail.'
+        },
+        {
+            slug: 'wave6-pkce-remediation-ticket',
+            partialBriefing: [
+                '[2026-02-03] Security review SEC-412 opened by Nadia Kowalski for mobile OAuth flows: identified 15-minute authorization code TTL and missing PKCE S256 enforcement on legacy partner clients.',
+                '[2026-02-11] Mid-review patch deployed to staging by Tomás Herrera: shortened authorization code TTL from 15m to 60s and forced `code_challenge_method=S256` on iOS/Android first-party apps.'
+            ].join('\n'),
+            user: 'File the post-audit follow-up ticket in `PLAT` for the remaining SEC-412 OAuth PKCE closeout work.',
+            memQ: 'SEC-412 OAuth PKCE audit closeout remaining partner remediation owner deadline',
+            memThink: 'The Turn-0 briefing shows the Feb 3 finding and Feb 11 staging patch for first-party mobile apps, but lacks the final SEC-412 audit closeout decision, assignee, priority, and partner client constraints. Search `query_memory_notes` first.',
+            memRes: [
+                {
+                    date: '2026-02-26',
+                    text: 'SEC-412 closeout sign-off by Nadia Kowalski: first-party mobile PKCE S256 + 60s code TTL verified in prod Feb 25. Remaining follow-up assigned to Tomás Herrera (high priority, due Mar 20): enforce S256 on the 3 B2B kiosk integrations (`kiosk-west`, `kiosk-central`, `kiosk-east`), while strictly preserving `plain` challenge fallback ONLY on offline factory bench `bench-sim-local`.'
+                }
+            ],
+            tool: 'create_issue_ticket',
+            args: {
+                project: 'PLAT',
+                title: 'SEC-412 Follow-Up: Enforce OAuth PKCE S256 on B2B Kiosk Clients',
+                priority: 'high',
+                assignee: 'Tomás Herrera',
+                description: [
+                    'Context & Completed Milestones (SEC-412 Audit by Nadia Kowalski):',
+                    '- 2026-02-03 -> 2026-02-25: Reduced OAuth authorization code TTL from 15m to 60s and verified mandatory `code_challenge_method=S256` across iOS and Android first-party apps in production.',
+                    '- Remaining Scope (Due 2026-03-20, Owner: Tomás Herrera): Enforce mandatory PKCE `S256` rejection of unchallenged/plain requests on all 3 B2B kiosk clients (`kiosk-west`, `kiosk-central`, `kiosk-east`).',
+                    '- Explicit Exclusion: Do NOT remove `plain` challenge fallback on isolated offline factory harness `bench-sim-local`.'
+                ].join('\n')
+            },
+            actThink: 'File the high-priority `PLAT` ticket assigned to Tomás Herrera capturing the completed Feb 25 prod milestones, the Mar 20 deadline for `kiosk-west`/`kiosk-central`/`kiosk-east`, and the `bench-sim-local` exclusion.',
+            res: { ok: true, ticket_id: 'PLAT-891' },
+            final: 'Filed `PLAT-891` (high priority, assigned to Tomás Herrera, due Mar 20) to enforce PKCE `S256` across `kiosk-west`, `kiosk-central`, and `kiosk-east` while preserving offline `bench-sim-local`.'
+        },
+        {
+            slug: 'wave6-dr-game-day-retro-update',
+            partialBriefing: [
+                '[2026-01-28] Q1 Regional Failover Game Day planned by Hannah Park and Julian Cho for `us-west-2` -> `us-east-2`; target RTO <= 8 minutes and RPO = 0 committed transactions.',
+                '[2026-02-12] Game Day dry-run in staging hit a 6m40s DNS TTL stall on internal gRPC clients caching stale headless service IPs.'
+            ].join('\n'),
+            user: 'Update workspace document `doc_dr_q1_plan` with the complete Q1 Regional Failover Game Day execution results and follow-up rules.',
+            memQ: 'Q1 Regional Failover Game Day execution outcome RTO RPO follow-up',
+            memThink: 'The briefing has the Jan 28 plan and Feb 12 staging dry-run DNS stall, but is missing the live production Game Day execution results and final architectural rules. Query `query_memory_notes` before calling `update_workspace_doc`.',
+            memRes: [
+                {
+                    date: '2026-02-27',
+                    text: 'Live Q1 Regional Failover Game Day executed Feb 26 by Hannah Park and Julian Cho: after configuring 15s gRPC DNS resolver refresh + Envoy outlier ejection, full `us-west-2` -> `us-east-2` failover completed in 4m12s RTO (target <= 8m) with RPO = 0 lost transactions across 42,800 in-flight writes. Rule: never run automated cross-region database promotion without synchronous WAL LSN parity check (`lag_bytes == 0`).'
+                }
+            ],
+            tool: 'update_workspace_doc',
+            args: {
+                doc_id: 'doc_dr_q1_plan',
+                title: 'Q1 Regional Failover Game Day Plan & Execution Results',
+                body_markdown: [
+                    '# Q1 Regional Failover Game Day (`us-west-2` -> `us-east-2`)',
+                    '',
+                    '- **Leads**: Hannah Park and Julian Cho.',
+                    '- **2026-01-28 Target**: `RTO <= 8m`, `RPO = 0` committed transactions.',
+                    '- **2026-02-12 Staging Dry-Run**: Identified `6m40s` stale IP stall in internal gRPC headless DNS caching; remediated via `15s` gRPC DNS re-resolution and Envoy outlier ejection.',
+                    '- **2026-02-26 Live Execution Outcome**: Achieved `4m12s` end-to-end RTO and `RPO = 0` (`0` lost transactions across `42,800` in-flight writes).',
+                    '- **Mandatory Safety Invariant**: Never trigger automated cross-region DB promotion unless synchronous WAL LSN parity (`lag_bytes == 0`) is verified.'
+                ].join('\n')
+            },
+            actThink: 'Update `doc_dr_q1_plan` with the full chronological arc (Jan 28 targets, Feb 12 6m40s gRPC DNS stall + 15s refresh fix, Feb 26 4m12s RTO / RPO=0 over 42,800 writes, and the `lag_bytes == 0` promotion invariant).',
+            res: { ok: true, doc_id: 'doc_dr_q1_plan', updated: true },
+            final: 'Updated `doc_dr_q1_plan` with the Feb 12 gRPC DNS remediation, Feb 26 live failover metrics (`4m12s` RTO, `RPO = 0` across `42,800` writes), and the `lag_bytes == 0` promotion guard.'
+        },
+        {
+            slug: 'wave6-q2-offsite-agenda-calendar',
+            partialBriefing: [
+                '[2026-02-01] Architecture Guild Q2 Planning Workshop proposed by Soren Lindqvist for 2026-03-18 at 10:00 AM (90 minutes) with Camila Ortiz and Liam O\'Connor.',
+                '[2026-02-14] Workshop agenda draft added two core topics: (1) Kafka partition rebalance automation and (2) OpenTelemetry tail-sampling budget.'
+            ].join('\n'),
+            user: 'Schedule the finalized Architecture Guild Q2 Planning Workshop on the calendar with the complete agenda and constraints.',
+            memQ: 'Architecture Guild Q2 Planning Workshop final time attendees agenda exclusions',
+            memThink: 'The briefing shows the Feb 1 proposed slot (Mar 18 10:00 AM, 90m) and Feb 14 draft topics, but a later note may have adjusted the start time, attendee list, duration, or scope exclusions. Query `query_memory_notes` before scheduling.',
+            memRes: [
+                {
+                    date: '2026-03-02',
+                    text: 'Architecture Guild Q2 Planning Workshop finalized by Soren Lindqvist: moved to 2026-03-19T13:30 for 120 minutes to include Mei Lin (FinOps); added Topic 3 (ClickHouse tiered cold-storage TTLs). Scope rule: exclude vendor RFP procurement scoring from this session—handle vendor RFPs strictly in Friday FinOps review.'
+                }
+            ],
+            tool: 'create_calendar_event',
+            args: {
+                title: 'Architecture Guild Q2 Planning Workshop',
+                start_iso: '2026-03-19T13:30',
+                duration_minutes: 120,
+                attendees: ['Soren Lindqvist', 'Camila Ortiz', 'Liam O\'Connor', 'Mei Lin'],
+                notes: [
+                    'Finalized Q2 Architecture Guild Workshop (supersedes Feb 1 Mar 18 10:00 AM 90m draft):',
+                    '- Attendees: Soren Lindqvist (Lead), Camila Ortiz, Liam O\'Connor, and Mei Lin (FinOps).',
+                    '- Agenda:',
+                    '  1. Automated Kafka partition rebalance runbooks & safety throttles.',
+                    '  2. OpenTelemetry tail-based trace sampling Q2 cardinality budget.',
+                    '  3. ClickHouse hot-to-cold object storage TTL tiering (added Mar 2).',
+                    '- Explicit Out-of-Scope Constraint: Do NOT include vendor RFP procurement scoring in this workshop; vendor RFPs remain strictly in Friday FinOps review.'
+                ].join('\n')
+            },
+            actThink: 'Use the superseded Mar 19 13:30 (120m) slot, include all 4 attendees (adding Mei Lin), list all 3 finalized agenda items, and record the explicit vendor-RFP exclusion in `notes`.',
+            res: { ok: true, event_id: 'evt_arch_q2_37' },
+            final: 'Scheduled `Architecture Guild Q2 Planning Workshop` for `2026-03-19T13:30` (120m) with Soren Lindqvist, Camila Ortiz, Liam O\'Connor, and Mei Lin, including all three finalized topics and the vendor-RFP exclusion.'
+        },
+        {
+            slug: 'wave6-search-index-incident-resolution',
+            partialBriefing: [
+                '[2026-02-08] Incident ticket `OPS-704` opened: product catalog OpenSearch bulk indexer stalled with HTTP 429 circuit-breaker trips during nightly SKU sync.',
+                '[2026-02-09] Interim mitigation by Devon Brooks: throttled bulk batch size from 5,000 to 1,000 docs and doubled JVM heap on data nodes from 16GB to 24GB.'
+            ].join('\n'),
+            user: 'Mark `OPS-704` as resolved and record the full root-cause, permanent fix, and operational guardrails in the resolution note.',
+            memQ: 'OPS-704 OpenSearch bulk indexer permanent fix verification closeout',
+            memThink: 'The briefing only covers the Feb 8 outage and Feb 9 interim throttle/heap bump. Query `query_memory_notes` for the `OPS-704` permanent root-cause fix and verification metrics before transitioning `OPS-704` to `resolved`.',
+            memRes: [
+                {
+                    date: '2026-02-21',
+                    text: 'OPS-704 root cause & closeout verified by Devon Brooks and Elena Vance: rogue unpaginated `related_variants` nested mapping caused 18x segment explosion. Deployed flat `keyword` hash projection + adaptive 2,500-doc bulk micro-batching; 7 consecutive nightly syncs completed in 11m (down from 74m) with 0 HTTP 429 rejections. Guardrail: never enable `dynamic: true` nested mappings on `catalog_v4` indices.'
+                }
+            ],
+            tool: 'update_issue_status',
+            args: {
+                ticket_id: 'OPS-704',
+                status: 'resolved',
+                resolution_note: [
+                    'OPS-704 Resolution Summary (Verified by Devon Brooks & Elena Vance):',
+                    '- Timeline & Interim Mitigation (Feb 8-9): Nightly SKU sync hit OpenSearch HTTP 429 circuit-breaker trips; temporarily stabilized via 1,000-doc batches and 24GB JVM heap.',
+                    '- Root Cause & Permanent Fix (Feb 21): Unbounded `related_variants` nested mapping caused an 18x Lucene segment explosion. Replaced with flat `keyword` hash projection and adaptive 2,500-doc micro-batching.',
+                    '- Verification & Guardrail: 7 consecutive nightly runs finished in 11m (vs 74m baseline) with 0 HTTP 429 errors. Never enable `dynamic: true` nested mappings on `catalog_v4`.'
+                ].join('\n')
+            },
+            actThink: 'Transition `OPS-704` to `resolved` with a comprehensive resolution note uniting the Feb 8-9 mitigation, Feb 21 nested-mapping root cause + 2,500-doc fix, 7-night 11m/0-429 verification, and the `dynamic: true` prohibition.',
+            res: { ok: true, ticket_id: 'OPS-704', status: 'resolved' },
+            final: 'Resolved `OPS-704` with the complete root-cause timeline, 7-night verification (`11m` syncs, `0` HTTP 429s), and the `catalog_v4` `dynamic: true` guardrail.'
+        },
+        {
+            slug: 'wave6-cloud-egress-savings-ledger',
+            partialBriefing: [
+                '[2026-01-16] FinOps NAT Gateway Egress Reduction initiative launched by Mei Lin: baseline cross-AZ/NAT egress spend measured at $18,400/month across `prod-analytics` and `prod-ml`.',
+                '[2026-02-05] Phase 1 S3 Gateway VPC Endpoints deployed in `prod-analytics` by Liam O\'Connor, cutting $7,900/month in NAT data processing charges.'
+            ].join('\n'),
+            user: 'Publish the complete Q1 FinOps NAT Egress Reduction phase breakdown and closeout rules to the `FinOps_Q1_Ledger` spreadsheet.',
+            memQ: 'FinOps NAT Gateway Egress Reduction Phase 2 closeout final savings exception',
+            memThink: 'The briefing includes the Jan 16 baseline ($18,400/mo) and Feb 5 Phase 1 S3 Gateway Endpoints (-$7,900/mo), but is missing Phase 2 (`prod-ml`) closeout savings and any compliance exceptions. Query `query_memory_notes` first.',
+            memRes: [
+                {
+                    date: '2026-02-28',
+                    text: 'FinOps NAT Egress closeout by Mei Lin & Liam O\'Connor: Phase 2 ECR + STS Interface Endpoints deployed Feb 23 in `prod-ml`, saving an additional $6,200/month; final steady-state NAT spend is $4,300/month (-76.6%, $14,100/month total savings). Compliance constraint: keep outbound TLS inspection proxy active on `pci-cardholder-vpc`—do NOT attach direct S3 bypass endpoints to `pci-cardholder-vpc`.'
+                }
+            ],
+            tool: 'publish_spreadsheet_summary',
+            args: {
+                sheet_name: 'FinOps_Q1_Ledger',
+                columns: ['Date', 'Phase', 'Owner', 'Monthly_Impact_USD', 'Technical_Action_And_Constraints'],
+                rows: [
+                    ['2026-01-16', 'Baseline', 'Mei Lin', '$18,400/mo spend', 'Initial cross-AZ and NAT Gateway data processing baseline across prod-analytics and prod-ml.'],
+                    ['2026-02-05', 'Phase 1 (prod-analytics)', 'Liam O\'Connor', '-$7,900/mo saved', 'Deployed S3 Gateway VPC Endpoints eliminating NAT traversal for Parquet lakehouse reads.'],
+                    ['2026-02-23', 'Phase 2 (prod-ml)', 'Liam O\'Connor & Mei Lin', '-$6,200/mo saved', 'Deployed ECR + STS Interface VPC Endpoints for GPU worker image pulls and IAM token refresh.'],
+                    ['2026-02-28', 'Closeout & PCI Guardrail', 'Mei Lin', '$4,300/mo final (-76.6%)', 'Verified $14,100/mo total savings; MUST keep TLS inspection proxy on pci-cardholder-vpc (no direct S3 bypass).']
+                ]
+            },
+            actThink: 'Publish all 4 chronological rows (Jan 16 baseline, Feb 5 Phase 1 -$7,900, Feb 23 Phase 2 -$6,200, and Feb 28 $4,300/-76.6% closeout + `pci-cardholder-vpc` TLS proxy guardrail) to `FinOps_Q1_Ledger`.',
+            res: { ok: true, sheet_name: 'FinOps_Q1_Ledger', rows_written: 4 },
+            final: 'Published the 4-row Q1 NAT Egress Reduction ledger (`$18,400/mo` -> `$4,300/mo`, `-76.6%` / `$14,100/mo` saved) including the `pci-cardholder-vpc` TLS proxy constraint.'
+        },
+        {
+            slug: 'wave6-soc2-evidence-checklist-board',
+            partialBriefing: [
+                '[2026-02-04] SOC2 Type II Spring Readiness kicked off by Nadia Kowalski: 4 control families in scope (Access Reviews, Change Management, Backup Restore Drills, Vendor Risk).',
+                '[2026-02-17] Access Reviews and Change Management evidence packets uploaded and signed off by external auditor preliminary check.'
+            ].join('\n'),
+            user: 'Update the `SOC2_Spring_Readiness` checklist board with the current status of all four control families and remaining closeout actions.',
+            memQ: 'SOC2 Type II Spring Readiness Backup Restore Vendor Risk closeout remaining items',
+            memThink: 'The briefing covers Feb 4 kickoff and Feb 17 sign-off on 2 of 4 control families (Access Reviews, Change Management), but is missing the status of Backup Restore Drills and Vendor Risk. Query `query_memory_notes` before updating the board.',
+            memRes: [
+                {
+                    date: '2026-03-03',
+                    text: 'SOC2 readiness March 3 update (Nadia Kowalski & Hannah Park): PostgreSQL PITR Backup Restore Drill completed Mar 1 (checksum verified, signed off). Only Vendor Risk item `VR-19` (DataPipe subprocessor DPA addendum) remains open due Mar 12 (owner: Camila Ortiz). Auditor rule: upload redacted SHA-256 evidence manifests ONLY—never upload raw customer PII rows to the auditor portal.'
+                }
+            ],
+            tool: 'upsert_checklist_items',
+            args: {
+                board: 'SOC2_Spring_Readiness',
+                items: [
+                    '[DONE 2026-02-17] Access Reviews (CC6.1): Quarterly IAM & GitHub org entitlement packet signed off in preliminary auditor check (Owner: Nadia Kowalski).',
+                    '[DONE 2026-02-17] Change Management (CC8.1): Branch protection + 2PC CI approval sample trace verified by auditor (Owner: Nadia Kowalski).',
+                    '[DONE 2026-03-01] Backup Restore Drills (A1.2): PostgreSQL PITR restore drill completed with full checksum verification (Owner: Hannah Park).',
+                    '[OPEN DUE 2026-03-12] Vendor Risk VR-19 (CC9.2): Finalize countersigned DataPipe subprocessor DPA addendum (Owner: Camila Ortiz).',
+                    '[GUARDRAIL] Evidence Portal Redaction Rule: Upload redacted SHA-256 manifests ONLY; never upload raw customer PII records to the external auditor portal.'
+                ]
+            },
+            actThink: 'Upsert all 5 structured items on `SOC2_Spring_Readiness` reflecting the 3 completed control families, the single open `VR-19` item due Mar 12 for Camila Ortiz, and the zero-PII auditor upload guardrail.',
+            res: { ok: true, board: 'SOC2_Spring_Readiness', count: 5 },
+            final: 'Updated `SOC2_Spring_Readiness` with the 3 completed control families, open item `VR-19` (Camila Ortiz, due Mar 12), and the auditor PII redaction guardrail.'
+        },
+        {
+            slug: 'wave6-cutover-reschedule-with-closeout-reason',
+            partialBriefing: [
+                '[2026-02-10] Scheduled `evt_pg17_cutover` (PostgreSQL 17 Logical Replication Cutover) for `2026-03-08T02:00` UTC with Marcus Chen and Hannah Park.',
+                '[2026-02-22] Logical replication slot lag stayed < 80ms under synthetic 12k TPS load test, pending final sequences audit.'
+            ].join('\n'),
+            user: 'Reschedule `evt_pg17_cutover` to the updated maintenance window from our latest cutover readiness decision and include the full rationale.',
+            memQ: 'evt_pg17_cutover PostgreSQL 17 cutover readiness new maintenance window sequences',
+            memThink: 'The briefing shows the original `2026-03-08T02:00` window and Feb 22 load test, but not the sequences audit outcome or the updated maintenance timestamp. Call `query_memory_notes` to retrieve the latest cutover decision.',
+            memRes: [
+                {
+                    date: '2026-03-04',
+                    text: 'PostgreSQL 17 cutover readiness decision (Marcus Chen & Hannah Park): sequences audit found 14 unlogged identity sequences needing `pg_sync_replication_slots` script validation, and Fiscal Month-End close runs Mar 8 00:00-06:00 UTC. Move `evt_pg17_cutover` to `2026-03-15T03:00` UTC; freeze schema DDL 24h prior and do NOT drop PG15 standby `pg15-hot-fallback` for 72h post-cutover.'
+                }
+            ],
+            tool: 'reschedule_calendar_event',
+            args: {
+                event_id: 'evt_pg17_cutover',
+                new_start_iso: '2026-03-15T03:00',
+                reason: [
+                    'Moved PostgreSQL 17 Logical Replication Cutover from 2026-03-08T02:00 UTC to 2026-03-15T03:00 UTC per Mar 4 readiness review (Marcus Chen & Hannah Park):',
+                    '- Avoids collision with Fiscal Month-End close window on Mar 8 (00:00-06:00 UTC).',
+                    '- Incorporates validation for 14 identity sequences alongside verified <80ms logical slot lag at 12k TPS.',
+                    '- Cutover Guardrails: Enforce 24-hour pre-cutover schema DDL freeze and do NOT decommission `pg15-hot-fallback` until 72 hours post-cutover.'
+                ].join('\n')
+            },
+            actThink: 'Reschedule `evt_pg17_cutover` to `2026-03-15T03:00` with a detailed `reason` capturing the Mar 8 fiscal-close conflict, 14 identity sequences validation, <80ms @ 12k TPS benchmark, 24h DDL freeze, and 72h `pg15-hot-fallback` retention.',
+            res: { ok: true, event_id: 'evt_pg17_cutover', new_start_iso: '2026-03-15T03:00' },
+            final: 'Rescheduled `evt_pg17_cutover` to `2026-03-15T03:00` UTC with the full fiscal-close conflict rationale, 14-sequence validation note, 24h DDL freeze, and 72h `pg15-hot-fallback` guardrail.'
+        },
+        {
+            slug: 'wave6-mobile-crash-hotfix-notification',
+            partialBriefing: [
+                '[2026-02-18] iOS release `v4.18.0` phased rollout paused at 10% by Camila Ortiz after background push-decrypt ANR spikes on iOS 18.3 devices (`0.94%` crash-free drop).',
+                '[2026-02-19] Root cause isolated to synchronous Keychain mutex lock inside `NotificationServiceExtension` when >5 silent pushes arrive concurrently.'
+            ].join('\n'),
+            user: 'Send the release closeout update for iOS hotfix `v4.18.1` to `#mobile-releases`.',
+            memQ: 'iOS v4.18.1 hotfix rollout closeout crash-free rate guardrail',
+            memThink: 'The briefing stops at the Feb 18 pause of `v4.18.0` and Feb 19 Keychain mutex root cause. Query `query_memory_notes` for the `v4.18.1` hotfix rollout completion metrics and permanent guardrails before messaging `#mobile-releases`.',
+            memRes: [
+                {
+                    date: '2026-02-25',
+                    text: 'iOS hotfix `v4.18.1` closeout by Camila Ortiz & Julian Cho: replaced synchronous Keychain read with cached AppGroup ephemeral session key; 100% App Store rollout completed Feb 24 with 99.96% crash-free sessions and 0 background ANRs. Release policy: never invoke `SecItemCopyMatching` on the main or extension dispatch queue without a 150ms non-blocking timeout.'
+                }
+            ],
+            tool: 'send_team_notification',
+            args: {
+                channel: 'mobile-releases',
+                subject: 'iOS v4.18.1 Hotfix 100% Rollout Closeout',
+                message: [
+                    'iOS v4.18.1 Hotfix Closeout (Leads: Camila Ortiz, Julian Cho):',
+                    '- Feb 18-19 Incident & Root Cause: Paused `v4.18.0` at 10% due to iOS 18.3 background ANRs (-0.94% crash-free) traced to synchronous Keychain mutex contention in `NotificationServiceExtension` during >5 silent push bursts.',
+                    '- Feb 24-25 100% Rollout Outcome: Shipped `v4.18.1` using cached AppGroup ephemeral session keys; reached 100% App Store adoption at 99.96% crash-free sessions and 0 background ANRs.',
+                    '- Permanent Guardrail: Never call `SecItemCopyMatching` on main/extension queues without a 150ms non-blocking timeout.'
+                ].join('\n')
+            },
+            actThink: 'Post the complete `v4.18.0` -> `v4.18.1` incident-to-closeout arc to `#mobile-releases`, including Camila Ortiz & Julian Cho, 99.96% crash-free / 0 ANRs, and the `SecItemCopyMatching` 150ms guardrail.',
+            res: { ok: true, message_id: 'msg_mob_rel_42' },
+            final: 'Sent the `iOS v4.18.1 Hotfix 100% Rollout Closeout` update to `#mobile-releases` with full root-cause context, `99.96%` crash-free verification, and the `SecItemCopyMatching` guardrail.'
+        },
+        {
+            slug: 'wave6-partner-rate-limit-policy-doc',
+            partialBriefing: [
+                '[2026-01-25] Partner API Tiering RFC opened by Elena Vance: proposed uniform `600 req/min` token-bucket ceiling per API key across `/v2/orders` and `/v2/inventory`.',
+                '[2026-02-10] Sandbox replay showed bursts during warehouse shift handoffs at 06:00 and 14:00 UTC legitimately peaked at `1,100 req/min` for 45 seconds.'
+            ].join('\n'),
+            user: 'Create the finalized `Partner API Rate-Limit Policy` document in `/ops/policies` with all approved tiers, burst windows, and exemptions.',
+            memQ: 'Partner API Rate-Limit Policy final approved tiers burst exemption closeout',
+            memThink: 'The briefing has the Jan 25 initial RFC (600 req/min) and Feb 10 shift-handoff burst finding (1,100 req/min), but lacks the final approved rate-limit tiers and webhook/healthcheck exemptions. Query `query_memory_notes` first.',
+            memRes: [
+                {
+                    date: '2026-02-23',
+                    text: 'Partner API Rate-Limit Policy finalized Feb 23 by Elena Vance & Priya Nair: Standard partners get `600 req/min` sustained + `1,200` burst bucket; Enterprise Warehouse partners get `1,500 req/min` sustained + `3,000` burst bucket with `Retry-After` jitter headers. Exemption: never rate-limit inbound `/v2/webhooks/carrier-ack` or `/healthz` endpoints.'
+                }
+            ],
+            tool: 'create_workspace_doc',
+            args: {
+                title: 'Partner API Rate-Limit Policy',
+                folder: '/ops/policies',
+                body_markdown: [
+                    '# Partner API Rate-Limit Policy (`/v2/orders` & `/v2/inventory`)',
+                    '',
+                    '- **Approvers**: Elena Vance and Priya Nair (finalized 2026-02-23, superseding 2026-01-25 uniform `600 req/min` draft after 2026-02-10 `1,100 req/min` shift-handoff replay).',
+                    '- **Approved Token-Bucket Tiers**:',
+                    '  - **Standard Partner Tier**: `600 req/min` sustained rate with `1,200`-token burst capacity.',
+                    '  - **Enterprise Warehouse Tier**: `1,500 req/min` sustained rate with `3,000`-token burst capacity to absorb 06:00/14:00 UTC shift handoffs, emitting `Retry-After` jitter headers on `429`.',
+                    '- **Mandatory Endpoint Exemptions**: Never apply token-bucket throttling to `/v2/webhooks/carrier-ack` or `/healthz`.'
+                ].join('\n'),
+                tags: ['api', 'rate-limit', 'policy']
+            },
+            actThink: 'Create `/ops/policies/Partner API Rate-Limit Policy` documenting the Jan 25 -> Feb 10 -> Feb 23 evolution, both Standard (`600`/`1,200`) and Enterprise (`1,500`/`3,000`) tiers, `Retry-After` headers, and `/v2/webhooks/carrier-ack` + `/healthz` exemptions.',
+            res: { ok: true, doc_id: 'doc_partner_rl_43', path: '/ops/policies/Partner API Rate-Limit Policy' },
+            final: 'Created `/ops/policies/Partner API Rate-Limit Policy` with Standard (`600`/`1,200`) and Enterprise Warehouse (`1,500`/`3,000`) tiers plus the `/v2/webhooks/carrier-ack` and `/healthz` exemptions.'
+        },
+        {
+            slug: 'wave6-ml-feature-store-backfill-ticket',
+            partialBriefing: [
+                '[2026-02-06] Fraud Feature Store v3 backfill initiated by Soren Lindqvist across 18 months of historical Parquet partitions (`2024-08` through `2026-01`).',
+                '[2026-02-16] Backfill completed 15 of 18 months (`2024-11` through `2026-01`), halting on `2024-08..2024-10` due to nullable `merchant_mcc_code` schema evolution.'
+            ].join('\n'),
+            user: 'File a medium-priority tracking ticket in `DATA` for the final Fraud Feature Store v3 backfill closeout verification.',
+            memQ: 'Fraud Feature Store v3 backfill 2024-08 2024-10 closeout null imputation',
+            memThink: 'The briefing stops at Feb 16 where `2024-08..2024-10` halted on nullable `merchant_mcc_code`. Query `query_memory_notes` to find how that schema gap was resolved and who owns the final point-in-time parity sign-off.',
+            memRes: [
+                {
+                    date: '2026-03-01',
+                    text: 'Fraud Feature Store v3 backfill closeout note (Soren Lindqvist & Mei Lin): `2024-08..2024-10` partitions re-ingested Feb 28 by mapping null `merchant_mcc_code` -> `"0000_UNKNOWN"` (zero row drops across 1.42B events). Final task assigned to Soren Lindqvist: run offline/online point-in-time join parity check (`max_skew == 0s`) before retiring `feature_store_v2` on Mar 25; do NOT backfill synthetic test tenant `tenant_sandbox_99` into prod.'
+                }
+            ],
+            tool: 'create_issue_ticket',
+            args: {
+                project: 'DATA',
+                title: 'Fraud Feature Store v3: Point-in-Time Parity Sign-Off Before v2 Retirement',
+                priority: 'medium',
+                assignee: 'Soren Lindqvist',
+                description: [
+                    'Completed Backfill Context (Soren Lindqvist & Mei Lin):',
+                    '- 2026-02-06 -> 2026-02-16: Backfilled `2024-11..2026-01` (15/18 months); isolated nullable `merchant_mcc_code` halt on `2024-08..2024-10`.',
+                    '- 2026-02-28 Resolution: Re-ingested `2024-08..2024-10` using deterministic `"0000_UNKNOWN"` imputation with 0 dropped rows across all 1.42B events.',
+                    '- Acceptance Criteria (Due before 2026-03-25 `feature_store_v2` retirement): Execute offline/online point-in-time join parity check verifying `max_skew == 0s`.',
+                    '- Negative Constraint: Strictly exclude `tenant_sandbox_99` synthetic rows from production feature tables.'
+                ].join('\n')
+            },
+            actThink: 'Create the medium-priority `DATA` ticket assigned to Soren Lindqvist detailing the Feb 6-28 18-month / 1.42B-event backfill (`"0000_UNKNOWN"` imputation), `max_skew == 0s` parity gate before Mar 25 `feature_store_v2` retirement, and `tenant_sandbox_99` exclusion.',
+            res: { ok: true, ticket_id: 'DATA-512' },
+            final: 'Filed `DATA-512` (medium priority, Soren Lindqvist) covering the 1.42B-event backfill closeout, `max_skew == 0s` parity verification before Mar 25, and `tenant_sandbox_99` exclusion.'
+        }
+    ];
+
+    wave6PartialBriefingSpecs.forEach((sp, idx) => {
+        const num = 33 + idx;
+        const steps = [
+            stepTool(
+                1,
+                'query_memory_notes',
+                { query: sp.memQ, top_k: 5 },
+                sp.memThink,
+                { results: sp.memRes }
+            ),
+            stepTool(
+                2,
+                sp.tool,
+                sp.args,
+                sp.actThink,
+                sp.res
+            )
+        ];
+        cases.push({
+            id: `ws-tool-${String(num).padStart(2, '0')}-${sp.slug}`,
+            systemPrompt: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n${sp.partialBriefing}`,
+            user: sp.user,
+            steps,
+            final: sp.final
+        });
+    });
+
     return cases.map((c) => ({
         id: c.id,
         timestamp: nowIso,
@@ -1938,7 +2351,7 @@ function buildWorkspaceToolChains(nowIso) {
         elitist_score: 95,
         tools: TOOLS_WORKSPACE,
         messages: [
-            { role: 'system', content: WORKSPACE_AGENT_SYSTEM_PROMPT },
+            { role: 'system', content: normalizePortableSftText(c.systemPrompt || WORKSPACE_AGENT_SYSTEM_PROMPT, 'workspace') },
             { role: 'user', content: normalizePortableSftText(c.user, 'workspace') },
             ...c.steps.flat(),
             { role: 'assistant', content: normalizePortableSftText(c.final, 'workspace') }
@@ -2856,6 +3269,1077 @@ function buildAgenticToolCallingDpoPairs() {
                     content: "I'm sorry, I cannot terminate database processes as that could disrupt system state."
                 }
             ]
+        },
+
+        // --- 8 verbatim_entity_and_constraint_preservation pairs (Wave-5: prevents paraphrasing/dropping proper nouns, exact dates, percentages, and prerequisites inside tool arguments) ---
+        {
+            id: 'dpo-tool-verbatim-01-preserve-internal-codename-in-calendar-notes',
+            mode: 'verbatim_constraint_preservation',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-VERBATIM-01',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[Compiled Memory Briefing]\n- Standing Release Governance (2027-09-14): Cross-team infrastructure release reviews MUST use the internal **Helios** review surface (covering deploy velocity, provenance-backed service ownership cards, and incident-load summaries).`
+                },
+                {
+                    role: 'user',
+                    content: 'Schedule a 45-minute `Infra Release Review` for `2028-02-10T14:00` with `infra-release@example.org` and `platform-eng@example.org`, and include the required internal review surface and its three review pillars in the agenda notes.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'The memory briefing specifies the internal **Helios** review surface covering (1) deploy velocity, (2) provenance-backed service ownership cards, and (3) incident-load summaries. I must preserve the exact proper noun `Helios` and all three items inside `create_calendar_event.notes`.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_calendar_event',
+                            type: 'function',
+                            function: {
+                                name: 'create_calendar_event',
+                                arguments: {
+                                    title: 'Infra Release Review',
+                                    start_iso: '2028-02-10T14:00',
+                                    duration_minutes: 45,
+                                    attendees: ['infra-release@example.org', 'platform-eng@example.org'],
+                                    notes: 'Agenda: Conduct review using the internal Helios review surface covering: (1) deploy velocity, (2) provenance-backed service ownership cards, and (3) incident-load summaries.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Schedule the Infra Release Review calendar event with the review surface details.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_calendar_event',
+                            type: 'function',
+                            function: {
+                                name: 'create_calendar_event',
+                                arguments: {
+                                    title: 'Infra Release Review',
+                                    start_iso: '2028-02-10T14:00',
+                                    duration_minutes: 45,
+                                    attendees: ['infra-release@example.org', 'platform-eng@example.org'],
+                                    notes: 'Agenda: Conduct review using the internal review surface covering deploy velocity, service ownership, and incident summaries.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-verbatim-02-preserve-exact-day-and-rotation-name',
+            mode: 'verbatim_constraint_preservation',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-VERBATIM-01',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[Compiled Memory Briefing]\n- Historical Handoff Record (#00412): On **August 19, 2024**, the **Core Storage On-Call Rotation** executed a planned primary swap in which **Devon Patel** replaced **rin-k** (rin-k did NOT remain listed on the rotation).`
+                },
+                {
+                    role: 'user',
+                    content: 'Post a correction notification to `storage-ops-audit` with subject `Runbook Handoff Correction` clarifying the historical August 2024 on-call changeover.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'The memory record specifies the exact date (`August 19, 2024`), exact rotation name (`Core Storage On-Call Rotation`), and exact swap (`Devon Patel` replaced `rin-k`, who did not remain listed). Include every exact fact in `send_team_notification.message`.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_send_team_notification',
+                            type: 'function',
+                            function: {
+                                name: 'send_team_notification',
+                                arguments: {
+                                    channel: 'storage-ops-audit',
+                                    subject: 'Runbook Handoff Correction',
+                                    message: 'Correction: The August 19, 2024 changeover on the Core Storage On-Call Rotation was a planned swap in which Devon Patel replaced rin-k in the rotation (rin-k did not remain the listed member).'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Notify storage-ops-audit about the August 2024 swap.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_send_team_notification',
+                            type: 'function',
+                            function: {
+                                name: 'send_team_notification',
+                                arguments: {
+                                    channel: 'storage-ops-audit',
+                                    subject: 'Runbook Handoff Correction',
+                                    message: 'Correction: The August 2024 on-call changeover was a planned swap where Devon Patel replaced rin-k in the rotation.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-verbatim-03-preserve-prerequisite-condition-and-all-three-exceptions',
+            mode: 'verbatim_constraint_preservation',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-VERBATIM-01',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[Compiled Memory Briefing]\n- Architecture Intake Gate (2027-11-04): Before accepting or scheduling any architecture review request, receiving a 1-page written context note is a **mandatory prerequisite**. Requests with placeholder conditions (such as "TBD" or "needs review") must be returned to the requester **without exception review** unless they qualify under one of the three standing exceptions: (1) **data-contract**, (2) **provenance**, or (3) **failure-mode**.`
+                },
+                {
+                    role: 'user',
+                    content: 'Notify `arch-intake` with subject `ARCH-2028-019 Triage` instructing the intake coordinator how to handle `ARCH-2028-019` (submitted by `marcus` with condition `"TBD"`) and reminding them of the prerequisite for scheduling and the three standing exception categories.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Must include: (1) return `ARCH-2028-019` to `marcus` **without exception review** because `"TBD"` is a placeholder, (2) receiving the 1-page written context note is a **mandatory prerequisite** before accepting or scheduling any review, and (3) all three standing exception categories (**data-contract**, **provenance**, and **failure-mode**).',
+                    tool_calls: [
+                        {
+                            id: 'call_01_send_team_notification',
+                            type: 'function',
+                            function: {
+                                name: 'send_team_notification',
+                                arguments: {
+                                    channel: 'arch-intake',
+                                    subject: 'ARCH-2028-019 Triage',
+                                    message: 'Please return ARCH-2028-019 to marcus immediately without exception review because the condition "TBD" is a non-specific placeholder. As a reminder, receiving a 1-page written context note is a mandatory prerequisite before accepting or scheduling any architecture review, and only the three standing exception categories—(1) data-contract, (2) provenance, and (3) failure-mode—qualify for exception review.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Send triage instructions for ARCH-2028-019 to arch-intake.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_send_team_notification',
+                            type: 'function',
+                            function: {
+                                name: 'send_team_notification',
+                                arguments: {
+                                    channel: 'arch-intake',
+                                    subject: 'ARCH-2028-019 Triage',
+                                    message: 'Please return ARCH-2028-019 to marcus because "TBD" is a placeholder. Also ask marcus for a 1-page context note before the meeting, and note the data-contract and provenance exceptions.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-verbatim-04-no-hallucinated-measurements-and-preserve-100pct-allocations',
+            mode: 'verbatim_constraint_preservation',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-VERBATIM-01',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[Compiled Memory Briefing]\n- Studio Layout Note (2027-10-12): Keep the north wall clear for the drafting table and acoustic panels; **do not invent room or desk dimensions** that are not measured in the note.\n- Benefits & Estate Checklist (2027-11-20): Both partners must be listed as each other's **100% primary beneficiary** across **both** the **401(k) retirement account** and the **term life insurance policy**.`
+                },
+                {
+                    role: 'user',
+                    content: 'Create a workspace document titled `Q1 Household & Studio Checklist` in `/personal/planning` covering both the studio north-wall setup and the benefits beneficiary verification.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Verify constraints: (1) include north wall setup for drafting table and acoustic panels without inventing any unmeasured room or surface dimensions; (2) explicitly state the **100% primary beneficiary** designation across **both** the **401(k) retirement account** and the **term life insurance policy**.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_workspace_doc',
+                            type: 'function',
+                            function: {
+                                name: 'create_workspace_doc',
+                                arguments: {
+                                    title: 'Q1 Household & Studio Checklist',
+                                    folder: '/personal/planning',
+                                    body_markdown: '# Q1 Household & Studio Checklist\n\n## 1. Studio North-Wall Setup\n- Keep the north wall clear for the drafting table and acoustic panel placement (no unmeasured room or surface dimensions assumed).\n\n## 2. Benefits & Beneficiary Verification\n- Verify that both partners are recorded as each other\'s **100% primary beneficiary** on **both**:\n  1. **401(k) retirement account**\n  2. **Term life insurance policy**',
+                                    tags: ['household', 'studio', 'benefits']
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Create the household and studio checklist doc.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_workspace_doc',
+                            type: 'function',
+                            function: {
+                                name: 'create_workspace_doc',
+                                arguments: {
+                                    title: 'Q1 Household & Studio Checklist',
+                                    folder: '/personal/planning',
+                                    body_markdown: '# Q1 Household & Studio Checklist\n\n## 1. Studio North-Wall Setup\n- Place the 60" x 30" drafting table along the 12-foot north wall beneath the acoustic panels.\n\n## 2. Benefits & Beneficiary Verification\n- Confirm that both partners are listed as each other\'s primary beneficiary on retirement and life insurance records.',
+                                    tags: ['household', 'studio', 'benefits']
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-verbatim-05-latest-contract-term-override-and-authorized-accounts',
+            mode: 'verbatim_constraint_preservation',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-VERBATIM-01',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[Compiled Memory Briefing]\n- [2027-03-15] Legacy Sandbox Term: ran from April 1, 2027 through September 30, 2027.\n- [2027-09-28] Superseding Renewal Term: Active enterprise sandbox authorization runs from **October 1, 2027 through March 31, 2028**, and **Beacon Bio** and **Vertex Retail** are the **only** authorized customer accounts.`
+                },
+                {
+                    role: 'user',
+                    content: 'Schedule a 30-minute `Enterprise Sandbox Compliance Check` on `2028-01-18T11:00` with `compliance@example.org`, noting the active authorization term and the authorized customer accounts.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'The [2027-09-28] entry supersedes the older April–September term. The active term is **October 1, 2027 through March 31, 2028**, and I must explicitly state that **Beacon Bio** and **Vertex Retail** are the **only** authorized customer accounts.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_calendar_event',
+                            type: 'function',
+                            function: {
+                                name: 'create_calendar_event',
+                                arguments: {
+                                    title: 'Enterprise Sandbox Compliance Check',
+                                    start_iso: '2028-01-18T11:00',
+                                    duration_minutes: 30,
+                                    attendees: ['compliance@example.org'],
+                                    notes: 'Verify active enterprise sandbox authorization for the term October 1, 2027 through March 31, 2028. Confirm that Beacon Bio and Vertex Retail are the only authorized customer accounts.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Schedule the Enterprise Sandbox Compliance Check event.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_calendar_event',
+                            type: 'function',
+                            function: {
+                                name: 'create_calendar_event',
+                                arguments: {
+                                    title: 'Enterprise Sandbox Compliance Check',
+                                    start_iso: '2028-01-18T11:00',
+                                    duration_minutes: 30,
+                                    attendees: ['compliance@example.org'],
+                                    notes: 'Verify enterprise sandbox authorization for April 1 through September 30, 2027 covering Beacon Bio and Vertex Retail.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-verbatim-06-weekend-trip-complete-meal-windows-and-flexibility',
+            mode: 'verbatim_constraint_preservation',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-VERBATIM-01',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[Compiled Memory Briefing]\n- Weekend Getaway Format (2027-08-19): Short weekend trips must use direct car travel, at most one primary Saturday outing, substantial unscheduled downtime, no extra side attractions, **explicit meal windows across every day of the trip (Friday dinner; Saturday breakfast, lunch, and dinner; Sunday breakfast and lunch)**, and **explicit buffer flexibility for timing changes**.`
+                },
+                {
+                    role: 'user',
+                    content: 'Create a workspace document titled `Mendocino Weekend Plan (Mar 10-12)` in `/personal/travel` following our standing weekend getaway format.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Include every standing constraint in `body_markdown`: direct car travel, one primary Saturday outing, substantial downtime, zero extra attractions, all 6 meal windows across Friday/Saturday/Sunday (Friday dinner; Saturday breakfast, lunch, dinner; Sunday breakfast, lunch), and explicit timing flexibility.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_workspace_doc',
+                            type: 'function',
+                            function: {
+                                name: 'create_workspace_doc',
+                                arguments: {
+                                    title: 'Mendocino Weekend Plan (Mar 10-12)',
+                                    folder: '/personal/travel',
+                                    body_markdown: '# Mendocino Weekend Plan (Mar 10–12)\n\n- **Travel & Flexibility**: Direct car drive to and from Mendocino with built-in buffer flexibility across all arrival, outing, and departure windows so timing can shift without stress.\n- **Pace**: Strictly one primary Saturday outing, substantial unscheduled downtime, and no extra side attractions.\n\n## Schedule & Practical Meal Windows\n- **Friday, Mar 10**:\n  - Afternoon drive & check-in (flexible arrival buffer)\n  - **Friday Dinner Window (6:30–8:00 PM)**: Casual coastal dinner near the inn\n- **Saturday, Mar 11**:\n  - **Saturday Breakfast Window (8:30–9:30 AM)**: Coffee and pastry at the inn\n  - **Primary Outing (10:30 AM–1:00 PM, flexible timing)**: Mendocino Headlands bluff trail walk\n  - **Saturday Lunch Window (1:15–2:30 PM)**: Town cafe lunch\n  - **Afternoon Downtime (2:30–6:30 PM)**: Unscheduled reading and rest\n  - **Saturday Dinner Window (7:00–8:30 PM)**: Relaxed dinner in town\n- **Sunday, Mar 12**:\n  - **Sunday Breakfast Window (8:30–9:45 AM)**: Slow morning breakfast\n  - **Sunday Lunch Window (12:00–1:15 PM)**: Lunch stop before or during the direct drive home',
+                                    tags: ['travel', 'weekend']
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Create the Mendocino weekend travel plan.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_workspace_doc',
+                            type: 'function',
+                            function: {
+                                name: 'create_workspace_doc',
+                                arguments: {
+                                    title: 'Mendocino Weekend Plan (Mar 10-12)',
+                                    folder: '/personal/travel',
+                                    body_markdown: '# Mendocino Weekend Plan (Mar 10–12)\n\n- **Friday**: Direct car drive to Mendocino and evening rest.\n- **Saturday**: Morning Mendocino Headlands walk (one primary outing), followed by substantial afternoon downtime and a 7:00 PM dinner.\n- **Sunday**: Slow morning coffee and direct drive home.',
+                                    tags: ['travel', 'weekend']
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        // --- 10 Wave-6 partial_briefing_gap_search_and_exhaustive_args pairs (5 Gap-Search + 5 Exhaustive Multi-Clause Args) ---
+        {
+            id: 'dpo-tool-wave6-gap-01-search-closeout-before-doc',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-GAP-01',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-01-12] Envoy mTLS Mesh migration kicked off by Elena Vance: Phase 1 enabled permissive mTLS across 14 checkout services targeting <= 1.2ms handshake overhead.\n[2026-02-01] Mid-rollout update: strict mTLS paused at 60% after legacy gRPC health probes from \`billing-cron-v1\` lacked client certificates.`
+                },
+                {
+                    role: 'user',
+                    content: 'Create the final closeout summary document in `/ops/retros` titled `Envoy mTLS Mesh Closeout` with the completed rollout status and exceptions.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'The `[SOVEREIGN MEMORY BRIEFING]` has the Jan 12 kickoff and Feb 1 pause at 60%, but is missing the post-Feb 1 closeout outcome and how `billing-cron-v1` was resolved or exempted. Query `query_memory_notes` for the Envoy mTLS closeout note before writing the document.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_query_memory_notes',
+                            type: 'function',
+                            function: {
+                                name: 'query_memory_notes',
+                                arguments: {
+                                    query: 'Envoy mTLS Mesh closeout strict cutover billing-cron-v1 exception',
+                                    top_k: 5
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Write the Envoy mTLS Mesh closeout doc from the briefing notes.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_workspace_doc',
+                            type: 'function',
+                            function: {
+                                name: 'create_workspace_doc',
+                                arguments: {
+                                    title: 'Envoy mTLS Mesh Closeout',
+                                    folder: '/ops/retros',
+                                    body_markdown: '# Envoy mTLS Mesh Closeout\n\nElena Vance led the Envoy mTLS rollout across 14 checkout services. Strict mTLS reached 60% and is currently paused while `billing-cron-v1` client certificates are investigated.',
+                                    tags: ['mtls', 'retro']
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-gap-02-search-closeout-before-notify',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-GAP-02',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-01-19] Stripe Webhook Deduplication Redis->PgBouncer migration started by Priya Nair and Marcus Chen.\n[2026-02-07] Canary at 25% traffic showed occasional lock contention on \`webhook_idempotency_keys\` when duplicate retries arrived within 15ms.`
+                },
+                {
+                    role: 'user',
+                    content: 'Post the final rollout completion update for Stripe Webhook Deduplication to `#payments-eng`.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'The Turn-0 briefing stops at the Feb 7 25% canary lock-contention note and omits the final 100% completion metrics, advisory-lock/SKIP LOCKED fix, and any operational guardrails. Run `query_memory_notes` to fetch the closeout update before posting to `#payments-eng`.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_query_memory_notes',
+                            type: 'function',
+                            function: {
+                                name: 'query_memory_notes',
+                                arguments: {
+                                    query: 'Stripe Webhook Deduplication final rollout closeout webhook_idempotency_keys',
+                                    top_k: 5
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Post the Stripe Webhook Deduplication status to `#payments-eng`.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_send_team_notification',
+                            type: 'function',
+                            function: {
+                                name: 'send_team_notification',
+                                arguments: {
+                                    channel: 'payments-eng',
+                                    subject: 'Stripe Webhook Deduplication Update',
+                                    message: 'Priya Nair and Marcus Chen migrated Stripe Webhook Deduplication to PgBouncer (25% canary tested, lock contention noted on 15ms retries).'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-gap-03-search-closeout-before-ticket',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-GAP-03',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-02-02] KMS Envelope Key Rotation audit ` + '`SEC-508`' + ` opened by Nadia Kowalski across 9 tenant vaults.\n[2026-02-13] 7 of 9 tenant vaults rotated cleanly to ` + '`kms-master-2026-q1`' + `; 2 archival vaults held pending legacy backup verification.`
+                },
+                {
+                    role: 'user',
+                    content: 'File the post-closeout follow-up ticket in `SEC` for the remaining `SEC-508` archival vault guardrail.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'The briefing only covers through Feb 13 (7/9 vaults rotated, 2 archival vaults pending) and lacks the `SEC-508` closeout decision, owner, priority, and exact archival key retention guardrail. Call `query_memory_notes` first.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_query_memory_notes',
+                            type: 'function',
+                            function: {
+                                name: 'query_memory_notes',
+                                arguments: {
+                                    query: 'SEC-508 KMS Envelope Key Rotation closeout archival vault owner guardrail',
+                                    top_k: 5
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Create the follow-up ticket for the 2 archival vaults from the briefing.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_issue_ticket',
+                            type: 'function',
+                            function: {
+                                name: 'create_issue_ticket',
+                                arguments: {
+                                    project: 'SEC',
+                                    title: 'SEC-508: Rotate Remaining 2 Archival Vaults',
+                                    priority: 'high',
+                                    assignee: 'Nadia Kowalski',
+                                    description: 'Rotate the remaining 2 archival tenant vaults to `kms-master-2026-q1` after legacy backup verification completes.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-gap-04-search-latest-slot-before-calendar',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-GAP-04',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-02-05] Q2 Incident Commander Tabletop proposed by Hannah Park for 2026-03-24T11:00 (60m) with Devon Brooks and Julian Cho.\n[2026-02-15] Added multi-AZ Kafka broker loss scenario to the tabletop script.`
+                },
+                {
+                    role: 'user',
+                    content: 'Create the calendar invite for the finalized Q2 Incident Commander Tabletop with the confirmed attendees, slot, and scope rules.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'The briefing shows the Feb 5 proposed time (`2026-03-24T11:00`, 60m) and Feb 15 draft scenario, but the user asked for the *finalized* slot, attendees, and scope rules. Query `query_memory_notes` to verify whether a newer confirmation note superseded the draft time or scope.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_query_memory_notes',
+                            type: 'function',
+                            function: {
+                                name: 'query_memory_notes',
+                                arguments: {
+                                    query: 'Q2 Incident Commander Tabletop finalized time attendees scope rules',
+                                    top_k: 5
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Schedule the Q2 Incident Commander Tabletop using the Feb 5 slot.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_create_calendar_event',
+                            type: 'function',
+                            function: {
+                                name: 'create_calendar_event',
+                                arguments: {
+                                    title: 'Q2 Incident Commander Tabletop',
+                                    start_iso: '2026-03-24T11:00',
+                                    duration_minutes: 60,
+                                    attendees: ['Hannah Park', 'Devon Brooks', 'Julian Cho'],
+                                    notes: 'Multi-AZ Kafka broker loss tabletop exercise.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-gap-05-search-verification-before-resolve',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-GAP-05',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-02-11] Ticket ` + '`OPS-819`' + ` opened for ClickHouse ingestion lag spiking to 14 minutes during hourly telemetry rollups.\n[2026-02-12] Soren Lindqvist applied temporary mitigation doubling ` + '`max_insert_threads`' + ` from 4 to 8 while investigating ` + '`SystemParts`' + ` merge amplification.`
+                },
+                {
+                    role: 'user',
+                    content: 'Resolve ticket `OPS-819` with the verified permanent fix, post-rollout metrics, and schema guardrails.'
+                }
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'The briefing only contains the Feb 11 lag symptom and Feb 12 temporary `max_insert_threads=8` mitigation, not the verified permanent fix or post-rollout lag metrics. Search `query_memory_notes` for `OPS-819` closeout details before calling `update_issue_status`.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_query_memory_notes',
+                            type: 'function',
+                            function: {
+                                name: 'query_memory_notes',
+                                arguments: {
+                                    query: 'OPS-819 ClickHouse permanent fix verification metrics guardrail',
+                                    top_k: 5
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Mark `OPS-819` resolved with the `max_insert_threads` change.',
+                    tool_calls: [
+                        {
+                            id: 'call_01_update_issue_status',
+                            type: 'function',
+                            function: {
+                                name: 'update_issue_status',
+                                arguments: {
+                                    ticket_id: 'OPS-819',
+                                    status: 'resolved',
+                                    resolution_note: 'Doubled ClickHouse `max_insert_threads` from 4 to 8 to mitigate hourly telemetry ingestion lag.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-exhaustive-01-mtls-closeout-doc',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-EXH-01',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-01-12] Envoy mTLS Mesh migration kicked off by Elena Vance: Phase 1 enabled permissive mTLS across 14 checkout services targeting <= 1.2ms handshake overhead.\n[2026-02-01] Mid-rollout update: strict mTLS paused at 60% after legacy gRPC health probes from \`billing-cron-v1\` lacked client certificates.`
+                },
+                {
+                    role: 'user',
+                    content: 'Create the final closeout summary document in `/ops/retros` titled `Envoy mTLS Mesh Closeout` with the completed rollout status and exceptions.'
+                },
+                ...stepTool(
+                    1,
+                    'query_memory_notes',
+                    { query: 'Envoy mTLS Mesh closeout strict cutover billing-cron-v1 exception', top_k: 5 },
+                    'Fetch the post-Feb 1 Envoy mTLS closeout record.',
+                    {
+                        results: [
+                            {
+                                date: '2026-02-20',
+                                text: 'Envoy mTLS Mesh closeout signed off by Elena Vance & Tomás Herrera: issued SPIFFE Workload API certs to `billing-cron-v1` and completed 100% STRICT mTLS cutover across all 14 checkout services on Feb 19 at 0.68ms p99 handshake overhead and 0 TLS handshake errors. Permanent guardrail: keep port `15021` (`/healthz/ready` kubelet plaintext probe) excluded from STRICT mTLS PeerAuthentication—never enable STRICT mTLS on port `15021`.'
+                            }
+                        ]
+                    }
+                )
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Now that I have all three chronological phases (Jan 12 kickoff, Feb 1 60% pause on `billing-cron-v1`, and Feb 19/20 100% STRICT cutover at 0.68ms p99 with Elena Vance & Tomás Herrera) plus the port `15021` plaintext kubelet probe exclusion, write an exhaustive multi-bullet closeout document via `create_workspace_doc`.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_create_workspace_doc',
+                            type: 'function',
+                            function: {
+                                name: 'create_workspace_doc',
+                                arguments: {
+                                    title: 'Envoy mTLS Mesh Closeout',
+                                    folder: '/ops/retros',
+                                    body_markdown: [
+                                        '# Envoy mTLS Mesh Closeout (14 Checkout Services)',
+                                        '',
+                                        '- **Sign-Off Owners**: Elena Vance and Tomás Herrera.',
+                                        '- **Chronological Rollout Timeline**:',
+                                        '  - **2026-01-12 (Kickoff)**: Enabled permissive mTLS across all 14 checkout services with a target p99 handshake overhead of `<= 1.2ms`.',
+                                        '  - **2026-02-01 (60% Canary Pause & Remediation)**: Paused strict enforcement at 60% after `billing-cron-v1` gRPC health probes lacked client certs; remediated by provisioning SPIFFE Workload API certificates to `billing-cron-v1`.',
+                                        '  - **2026-02-19 / 2026-02-20 (100% STRICT Cutover)**: Completed 100% `STRICT` mTLS enforcement across all 14 checkout services at `0.68ms` p99 handshake overhead with `0` TLS handshake errors.',
+                                        '- **Permanent Negative Constraint**: Port `15021` (`/healthz/ready` kubelet plaintext probe) MUST remain excluded from `STRICT` `PeerAuthentication`—never enable `STRICT` mTLS on port `15021`.'
+                                    ].join('\n'),
+                                    tags: ['envoy', 'mtls', 'closeout', 'retro']
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Create the Envoy mTLS closeout summary doc.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_create_workspace_doc',
+                            type: 'function',
+                            function: {
+                                name: 'create_workspace_doc',
+                                arguments: {
+                                    title: 'Envoy mTLS Mesh Closeout',
+                                    folder: '/ops/retros',
+                                    body_markdown: '# Envoy mTLS Mesh Closeout\n\n100% strict mTLS was rolled out across all 14 checkout services on Feb 19 at 0.68ms latency after fixing `billing-cron-v1` certs.',
+                                    tags: ['mtls', 'retro']
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-exhaustive-02-stripe-dedup-notify',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-EXH-02',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-01-19] Stripe Webhook Deduplication Redis->PgBouncer migration started by Priya Nair and Marcus Chen.\n[2026-02-07] Canary at 25% traffic showed occasional lock contention on \`webhook_idempotency_keys\` when duplicate retries arrived within 15ms.`
+                },
+                {
+                    role: 'user',
+                    content: 'Post the final rollout completion update for Stripe Webhook Deduplication to `#payments-eng`.'
+                },
+                ...stepTool(
+                    1,
+                    'query_memory_notes',
+                    { query: 'Stripe Webhook Deduplication final rollout closeout webhook_idempotency_keys', top_k: 5 },
+                    'Retrieve the final Stripe Webhook Deduplication closeout outcome.',
+                    {
+                        results: [
+                            {
+                                date: '2026-02-22',
+                                text: 'Stripe Webhook Deduplication 100% closeout (Priya Nair & Marcus Chen): replaced row lock wait with `INSERT ... ON CONFLICT DO NOTHING` + `pg_try_advisory_xact_lock`, completing 100% cutover Feb 21 at 1.9ms p99 latency and 0 duplicate ledger charges across 3.8M events. Guardrail: keep `pool_mode = transaction` on PgBouncer pool `payments_webhook_pool` and never use session-level advisory locks (`pg_advisory_lock`).'
+                            }
+                        ]
+                    }
+                )
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Include the full chronological arc (Jan 19 kickoff, Feb 7 25% canary 15ms retry contention, Feb 21/22 100% cutover using `INSERT ... ON CONFLICT DO NOTHING` + `pg_try_advisory_xact_lock` at 1.9ms p99 and 0 duplicate charges over 3.8M events) plus the `pool_mode = transaction` / no session-level `pg_advisory_lock` guardrail in `send_team_notification`.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_send_team_notification',
+                            type: 'function',
+                            function: {
+                                name: 'send_team_notification',
+                                arguments: {
+                                    channel: 'payments-eng',
+                                    subject: 'Stripe Webhook Deduplication 100% Cutover Complete',
+                                    message: [
+                                        'Stripe Webhook Deduplication Migration Closeout (Owners: Priya Nair, Marcus Chen):',
+                                        '- Jan 19 -> Feb 7 Canary: Initiated Redis-to-PgBouncer migration; isolated 15ms concurrent retry lock contention on `webhook_idempotency_keys` at 25% traffic.',
+                                        '- Feb 21-22 100% Cutover Outcome: Adopted `INSERT ... ON CONFLICT DO NOTHING` + `pg_try_advisory_xact_lock`, reaching 100% production traffic at `1.9ms` p99 latency with `0` duplicate ledger charges across `3.8M` webhook events.',
+                                        '- Mandatory PgBouncer Guardrail: Maintain `pool_mode = transaction` on `payments_webhook_pool` and NEVER invoke session-scoped `pg_advisory_lock`.'
+                                    ].join('\n')
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Send completion notice to `#payments-eng`.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_send_team_notification',
+                            type: 'function',
+                            function: {
+                                name: 'send_team_notification',
+                                arguments: {
+                                    channel: 'payments-eng',
+                                    subject: 'Stripe Webhook Deduplication Complete',
+                                    message: 'Stripe Webhook Deduplication is now at 100% on PgBouncer with 1.9ms p99 latency and zero duplicate charges.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-exhaustive-03-kms-archival-ticket',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-EXH-03',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-02-02] KMS Envelope Key Rotation audit \`SEC-508\` opened by Nadia Kowalski across 9 tenant vaults.\n[2026-02-13] 7 of 9 tenant vaults rotated cleanly to \`kms-master-2026-q1\`; 2 archival vaults held pending legacy backup verification.`
+                },
+                {
+                    role: 'user',
+                    content: 'File the post-closeout follow-up ticket in `SEC` for the remaining `SEC-508` archival vault guardrail.'
+                },
+                ...stepTool(
+                    1,
+                    'query_memory_notes',
+                    { query: 'SEC-508 KMS Envelope Key Rotation closeout archival vault owner guardrail', top_k: 5 },
+                    'Fetch the SEC-508 closeout record.',
+                    {
+                        results: [
+                            {
+                                date: '2026-02-27',
+                                text: 'SEC-508 closeout by Nadia Kowalski & Liam O\'Connor: both archival vaults (`vault-legal-7yr`, `vault-tax-7yr`) re-wrapped onto `kms-master-2026-q1` on Feb 26 with 100% SHA-256 restore verification. Follow-up ticket assigned to Liam O\'Connor (high priority, due Mar 28): implement automated quarterly DEK re-wrap cron, while strictly keeping retired CMK `kms-master-2024-archive` in `Disabled/Decrypt-Only` state—NEVER schedule `ScheduleKeyDeletion` on `kms-master-2024-archive` before 2031-12-31.'
+                            }
+                        ]
+                    }
+                )
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'File the high-priority `SEC` ticket assigned to Liam O\'Connor with complete chronological context (Feb 2 audit across 9 vaults, Feb 13 7/9 rotation, Feb 26 re-wrap of `vault-legal-7yr` and `vault-tax-7yr` with SHA-256 verification), the Mar 28 automated quarterly DEK cron deliverable, and the strict prohibition on `ScheduleKeyDeletion` for `kms-master-2024-archive` before `2031-12-31`.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_create_issue_ticket',
+                            type: 'function',
+                            function: {
+                                name: 'create_issue_ticket',
+                                arguments: {
+                                    project: 'SEC',
+                                    title: 'SEC-508 Follow-Up: Automated Quarterly DEK Re-Wrap & Archive CMK Retention Guard',
+                                    priority: 'high',
+                                    assignee: 'Liam O\'Connor',
+                                    description: [
+                                        'SEC-508 Closeout Lineage (Nadia Kowalski & Liam O\'Connor):',
+                                        '- 2026-02-02 -> 2026-02-13: Rotated 7/9 active tenant vaults to `kms-master-2026-q1`.',
+                                        '- 2026-02-26 Final Rotation: Re-wrapped archival vaults `vault-legal-7yr` and `vault-tax-7yr` onto `kms-master-2026-q1` (9/9 complete, 100% SHA-256 restore verified).',
+                                        '- Deliverable (Due 2026-03-28, Owner: Liam O\'Connor): Ship automated quarterly envelope DEK re-wrap job with alerting across all 9 vaults.',
+                                        '- Non-Negotiable Retention Constraint: Keep `kms-master-2024-archive` in `Decrypt-Only` policy state and NEVER invoke `ScheduleKeyDeletion` prior to `2031-12-31`.'
+                                    ].join('\n')
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Create the SEC follow-up ticket for Liam O\'Connor.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_create_issue_ticket',
+                            type: 'function',
+                            function: {
+                                name: 'create_issue_ticket',
+                                arguments: {
+                                    project: 'SEC',
+                                    title: 'Automated Quarterly KMS Key Re-Wrap',
+                                    priority: 'high',
+                                    assignee: 'Liam O\'Connor',
+                                    description: 'All 9 vaults are now on `kms-master-2026-q1`. Build the automated quarterly DEK re-wrap job by Mar 28.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-exhaustive-04-tabletop-calendar-invite',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-EXH-04',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-02-05] Q2 Incident Commander Tabletop proposed by Hannah Park for 2026-03-24T11:00 (60m) with Devon Brooks and Julian Cho.\n[2026-02-15] Added multi-AZ Kafka broker loss scenario to the tabletop script.`
+                },
+                {
+                    role: 'user',
+                    content: 'Create the calendar invite for the finalized Q2 Incident Commander Tabletop with the confirmed attendees, slot, and scope rules.'
+                },
+                ...stepTool(
+                    1,
+                    'query_memory_notes',
+                    { query: 'Q2 Incident Commander Tabletop finalized time attendees scope rules', top_k: 5 },
+                    'Retrieve the finalized Q2 Incident Commander Tabletop confirmation note.',
+                    {
+                        results: [
+                            {
+                                date: '2026-03-01',
+                                text: 'Q2 Incident Commander Tabletop finalized by Hannah Park: moved to `2026-03-26T14:00` for `90` minutes to add Nadia Kowalski (Security IC); Scenario 2 added (compromised CI deploy token revocation). Rule: run strictly against `staging-chaos-cell`—never inject faults or revoke tokens in `prod-us-west` during the exercise.'
+                            }
+                        ]
+                    }
+                )
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Schedule `Q2 Incident Commander Tabletop` at the superseding `2026-03-26T14:00` (`90` minutes) slot with all 4 attendees (Hannah Park, Devon Brooks, Julian Cho, Nadia Kowalski) and exhaustive `notes` covering both scenarios and the `staging-chaos-cell`-only / zero-`prod-us-west` fault guardrail.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_create_calendar_event',
+                            type: 'function',
+                            function: {
+                                name: 'create_calendar_event',
+                                arguments: {
+                                    title: 'Q2 Incident Commander Tabletop',
+                                    start_iso: '2026-03-26T14:00',
+                                    duration_minutes: 90,
+                                    attendees: ['Hannah Park', 'Devon Brooks', 'Julian Cho', 'Nadia Kowalski'],
+                                    notes: [
+                                        'Finalized Q2 Incident Commander Tabletop (supersedes Feb 5 draft of 2026-03-24T11:00 / 60m):',
+                                        '- Confirmed Roster: Hannah Park (Lead IC), Devon Brooks, Julian Cho, and Nadia Kowalski (Security IC).',
+                                        '- Exercise Scenarios:',
+                                        '  1. Multi-AZ Kafka broker quorum loss & consumer lag recovery (added Feb 15).',
+                                        '  2. Compromised CI deploy token emergency revocation & audit trace (added Mar 1).',
+                                        '- Safety Boundary: Execute drills strictly inside `staging-chaos-cell`; NEVER inject faults or revoke credentials in `prod-us-west`.'
+                                    ].join('\n')
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Create the calendar invite for Mar 26 at 14:00.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_create_calendar_event',
+                            type: 'function',
+                            function: {
+                                name: 'create_calendar_event',
+                                arguments: {
+                                    title: 'Q2 Incident Commander Tabletop',
+                                    start_iso: '2026-03-26T14:00',
+                                    duration_minutes: 90,
+                                    attendees: ['Hannah Park', 'Devon Brooks', 'Julian Cho', 'Nadia Kowalski'],
+                                    notes: 'Kafka broker loss and CI token revocation tabletop exercise in staging.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'dpo-tool-wave6-exhaustive-05-clickhouse-lag-resolve',
+            mode: 'partial_briefing_gap_search_and_exhaustive_args',
+            project: 'workspace-agent',
+            invariant: 'INV-AGENT-WAVE6-EXH-05',
+            tools: TOOLS_WORKSPACE,
+            prompt: [
+                {
+                    role: 'system',
+                    content: `${WORKSPACE_AGENT_SYSTEM_PROMPT}\n\n[SOVEREIGN MEMORY BRIEFING — Chronological Past User Messages (Oldest -> Newest)]\n[2026-02-11] Ticket \`OPS-819\` opened for ClickHouse ingestion lag spiking to 14 minutes during hourly telemetry rollups.\n[2026-02-12] Soren Lindqvist applied temporary mitigation doubling \`max_insert_threads\` from 4 to 8 while investigating \`SystemParts\` merge amplification.`
+                },
+                {
+                    role: 'user',
+                    content: 'Resolve ticket `OPS-819` with the verified permanent fix, post-rollout metrics, and schema guardrails.'
+                },
+                ...stepTool(
+                    1,
+                    'query_memory_notes',
+                    { query: 'OPS-819 ClickHouse permanent fix verification metrics guardrail', top_k: 5 },
+                    'Fetch the OPS-819 permanent resolution and verification metrics.',
+                    {
+                        results: [
+                            {
+                                date: '2026-02-24',
+                                text: 'OPS-819 permanent closeout by Soren Lindqvist & Camila Ortiz: root cause was per-minute synchronous `OPTIMIZE TABLE ... FINAL` triggered by legacy rollup worker causing 22x part-merge amplification. Removed `FINAL` cron, migrated rollup table to `AggregatingMergeTree` with async 5-minute materialized views, and reverted `max_insert_threads` back to 4; p99 ingestion lag held at 1.8s (down from 14m) over 10 days. Guardrail: never run scheduled `OPTIMIZE ... FINAL` on `telemetry_events_dist`.'
+                            }
+                        ]
+                    }
+                )
+            ],
+            chosen: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Resolve `OPS-819` with an exhaustive `resolution_note` capturing the Feb 11 14m lag spike, Feb 12 temporary `max_insert_threads=8` mitigation, Feb 24 root cause (legacy per-minute `OPTIMIZE TABLE ... FINAL` 22x merge amplification), permanent `AggregatingMergeTree` + 5m MV fix + revert to `max_insert_threads=4`, 10-day `1.8s` p99 verification, and prohibition on scheduled `OPTIMIZE ... FINAL` against `telemetry_events_dist`.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_update_issue_status',
+                            type: 'function',
+                            function: {
+                                name: 'update_issue_status',
+                                arguments: {
+                                    ticket_id: 'OPS-819',
+                                    status: 'resolved',
+                                    resolution_note: [
+                                        'OPS-819 Permanent Resolution (Verified by Soren Lindqvist & Camila Ortiz):',
+                                        '- Feb 11-12 Symptom & Interim Mitigation: Hourly telemetry rollup lag spiked to 14m; temporarily mitigated via `max_insert_threads=8`.',
+                                        '- Feb 24 Root Cause & Fix: Legacy rollup worker executed per-minute `OPTIMIZE TABLE ... FINAL`, triggering 22x `SystemParts` merge amplification. Disabled `FINAL` cron, migrated rollups to `AggregatingMergeTree` with 5-minute materialized views, and restored `max_insert_threads=4`.',
+                                        '- Verification & Guardrail: p99 ingestion lag stayed at `1.8s` across 10-day soak. NEVER schedule `OPTIMIZE ... FINAL` on `telemetry_events_dist`.'
+                                    ].join('\n')
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            rejected: [
+                {
+                    role: 'assistant',
+                    content: '',
+                    thinking: 'Mark `OPS-819` resolved.',
+                    tool_calls: [
+                        {
+                            id: 'call_02_update_issue_status',
+                            type: 'function',
+                            function: {
+                                name: 'update_issue_status',
+                                arguments: {
+                                    ticket_id: 'OPS-819',
+                                    status: 'resolved',
+                                    resolution_note: 'Removed `OPTIMIZE FINAL` cron and switched to `AggregatingMergeTree`, reducing ClickHouse lag from 14m to 1.8s.'
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
         }
     ];
 
@@ -2863,7 +4347,7 @@ function buildAgenticToolCallingDpoPairs() {
 }
 
 /**
- * Harvest and write both Wave-4 Agentic Tool-Calling SFT & DPO JSONL datasets.
+ * Harvest and write Wave-6 Agentic Tool-Calling SFT & DPO JSONL datasets.
  */
 export function harvestAgenticToolCallingDatasets({
     sftOutPath = AGENTIC_TOOL_CALLING_SFT_PATH,
@@ -2896,7 +4380,11 @@ export function harvestAgenticToolCallingDatasets({
         dpoTotal: dpoRows.length,
         dpoActionVsProse: dpoRows.filter((d) => d.mode === 'action_over_prose').length,
         dpoLoopTermination: dpoRows.filter((d) => d.mode === 'bounded_search_no_loop').length,
-        dpoNonRefusal: dpoRows.filter((d) => d.mode === 'benign_execution_no_false_refusal').length
+        dpoNonRefusal: dpoRows.filter((d) => d.mode === 'benign_execution_no_false_refusal').length,
+        dpoVerbatimPreservation: dpoRows.filter((d) => d.mode === 'verbatim_constraint_preservation').length,
+        dpoPartialBriefingExhaustive: dpoRows.filter(
+            (d) => d.mode === 'partial_briefing_gap_search_and_exhaustive_args'
+        ).length
     };
 
     return {

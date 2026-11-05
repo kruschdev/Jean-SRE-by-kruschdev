@@ -217,5 +217,10 @@ describe('CSO Security Hardening — Jean SRE & krusch-infra-mcp Verification', 
 
         const hygienePrompt = buildInfraThinkerPrompt('ctx', 'inflight', { node: 'krusch', focus: 'homelab_hygiene' });
         assert.ok(hygienePrompt.includes('Audit the root ~/homelab monorepo folder'), 'Infra Thinker prompt must support homelab_hygiene checklist');
+
+        const harnessCode = fs.readFileSync(new URL('../src/harness.js', import.meta.url), 'utf8');
+        assert.ok(harnessCode.includes('export function invalidateColabBurstCache()'), 'harness.js must export invalidateColabBurstCache');
+        assert.ok(harnessCode.includes('now - _colabProbeState.checkedAt >= COLAB_PROBE_TTL_MS'), 'harness.js must enforce COLAB_PROBE_TTL_MS');
     });
 });
+
