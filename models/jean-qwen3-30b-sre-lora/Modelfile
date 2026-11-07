@@ -1,5 +1,5 @@
-# Ollama Modelfile — Sovereign Unified Agentic SRE & Tool-Caller 30B (Wave-4 QLoRA + DPO Fused into Qwen3-Coder-30B-A3B)
-# Base weights preserved as: qwen3-coder-30b-moe:base
+# Ollama Modelfile — Sovereign Unified Agentic SRE & Tool-Caller 30B (Wave-6 QLoRA + Ref-Anchored DPO Fused into Qwen3-Coder-30B-A3B)
+# Base weights preserved untouched as: qwen3-coder-30b-moe:base
 FROM ./qwen3-coder-30b-sre.gguf
 
 TEMPLATE """{{ if .System }}<|im_start|>system

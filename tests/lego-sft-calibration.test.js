@@ -303,7 +303,9 @@ describe('Lego-First & Calibrated Referee SFT + DPO Pipeline', () => {
             'lego_and_referee_calibration_sft.jsonl',
             'referee_calibration_dpo.jsonl',
             'agentic_tool_calling_sft.jsonl',
-            'agentic_tool_calling_dpo.jsonl'
+            'agentic_tool_calling_dpo.jsonl',
+            'arete_values_sft.jsonl',
+            'arete_values_dpo.jsonl'
         ]) {
             const p = path.join(pubDir, name);
             if (fs.existsSync(p)) {

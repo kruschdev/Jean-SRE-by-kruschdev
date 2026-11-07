@@ -132,6 +132,28 @@ def parse_args() -> argparse.Namespace:
         help="Oversample factor for the agentic tool-calling DPO preference dataset (Wave-6 default: 3x).",
     )
     parser.add_argument(
+        "--arete-dataset",
+        default="data/distillation/arete_values_sft.jsonl",
+        help="Optional curated NousResearch/arete-data-pairs gold SFT JSONL dataset (accuracy=5, independence=5).",
+    )
+    parser.add_argument(
+        "--arete-oversample",
+        type=int,
+        default=1,
+        help="Oversample factor for the curated Arete SFT split.",
+    )
+    parser.add_argument(
+        "--arete-dpo-dataset",
+        default="data/distillation/arete_values_dpo.jsonl",
+        help="Optional curated NousResearch/arete-data-pairs high-contrast DPO preference JSONL dataset.",
+    )
+    parser.add_argument(
+        "--arete-dpo-oversample",
+        type=int,
+        default=1,
+        help="Oversample factor for the curated Arete DPO preference split.",
+    )
+    parser.add_argument(
         "--adapter-dir",
         default="",
         help="Optional existing PEFT LoRA checkpoint directory to resume/calibrate.",
@@ -723,6 +745,12 @@ def main() -> None:
             pinned_files.extend([str(agentic_path)] * ag_over)
             print(f"[QLoRA-30B] Pinning {ag_over}x Wave-6 Agentic SRE + Workspace Tool-Calling split from {agentic_path}", flush=True)
 
+        arete_path = Path(args.arete_dataset) if getattr(args, "arete_dataset", "") else None
+        if arete_path and arete_path.exists() and int(getattr(args, "arete_oversample", 1)) > 0:
+            ar_over = int(args.arete_oversample)
+            pinned_files.extend([str(arete_path)] * ar_over)
+            print(f"[QLoRA-30B] Pinning {ar_over}x Curated Arete Value/Statutory SFT split from {arete_path}", flush=True)
+
         print(f"[QLoRA-30B] Rendering Qwen3 ChatML + <tool_call> dataset (max_seq_length={args.max_seq_length}, max_chars={max_chars})...", flush=True)
         sft_ds = load_chatml_dataset(
             data_files,
@@ -731,7 +759,7 @@ def main() -> None:
             max_samples=args.max_samples,
             pinned_files=pinned_files,
         )
-        print(f"[QLoRA-30B] Loaded {len(sft_ds)} unified Teacher + Argon + Lego-First + Tool-Calling trajectories.", flush=True)
+        print(f"[QLoRA-30B] Loaded {len(sft_ds)} unified Teacher + Argon + Lego-First + Tool-Calling + Arete trajectories.", flush=True)
 
     if args.mode in ("dpo", "sft_dpo"):
         dpo_path = Path(args.dpo_dataset)
@@ -743,9 +771,14 @@ def main() -> None:
             ag_dpo_over = max(1, int(args.agentic_dpo_oversample))
             dpo_paths.extend([ag_dpo_path] * ag_dpo_over)
             print(f"[DPO-30B] Including {ag_dpo_over}x Wave-6 Tool-Action + Exhaustive-Arg preference pairs from {ag_dpo_path}", flush=True)
-        print("[DPO-30B] Rendering Referee + Tool-Action preference pairs...", flush=True)
+        arete_dpo_path = Path(args.arete_dpo_dataset) if getattr(args, "arete_dpo_dataset", "") else None
+        if arete_dpo_path and arete_dpo_path.exists() and int(getattr(args, "arete_dpo_oversample", 1)) > 0:
+            ar_dpo_over = int(args.arete_dpo_oversample)
+            dpo_paths.extend([arete_dpo_path] * ar_dpo_over)
+            print(f"[DPO-30B] Including {ar_dpo_over}x Curated Arete Non-Refusal & Statutory Framing preference pairs from {arete_dpo_path}", flush=True)
+        print("[DPO-30B] Rendering Referee + Tool-Action + Arete preference pairs...", flush=True)
         dpo_ds = load_dpo_dataset(dpo_paths, tokenizer=tokenizer, max_chars=max_chars)
-        print(f"[DPO-30B] Loaded {len(dpo_ds)} unified Referee + Tool-Action preference pairs.", flush=True)
+        print(f"[DPO-30B] Loaded {len(dpo_ds)} unified Referee + Tool-Action + Arete preference pairs.", flush=True)
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,

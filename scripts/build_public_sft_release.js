@@ -39,6 +39,8 @@ const PUBLIC_DIR = path.join(DATA_DIR, 'public');
 const SFT_PATH = path.join(DIST_DIR, 'gpt_oss_120b_sft.jsonl');
 const ELITIST_PATH = path.join(DIST_DIR, 'gpt_oss_120b_elitist_teacher.jsonl');
 const ARGON_PATH = path.join(DATA_DIR, 'argon_remediation_sft_corpus.jsonl');
+export const ARETE_VALUES_SFT_PATH = path.join(DIST_DIR, 'arete_values_sft.jsonl');
+export const ARETE_VALUES_DPO_PATH = path.join(DIST_DIR, 'arete_values_dpo.jsonl');
 
 function wellFormed(val, fallback = '') {
     const s = String(val ?? fallback);
@@ -255,8 +257,10 @@ function writeDatasetReadme(publicDir, stats) {
         stats.argonCount +
         stats.legoCalibrationCount +
         stats.agenticSftCount +
+        stats.areteSftCount +
         stats.dpoCount +
         stats.agenticDpoCount +
+        stats.areteDpoCount +
         stats.elitistCount +
         stats.codeAuditCount;
     const readme = `---
@@ -271,6 +275,7 @@ tags:
   - code-audit
   - bug-fixing
   - tool-calling
+  - arete
   - sft
   - dpo
   - qlora
@@ -296,6 +301,10 @@ configs:
     data_files:
       - split: train
         path: agentic_tool_calling_sft.jsonl
+  - config_name: arete_values_sft
+    data_files:
+      - split: train
+        path: arete_values_sft.jsonl
   - config_name: referee_calibration_dpo
     data_files:
       - split: train
@@ -304,9 +313,13 @@ configs:
     data_files:
       - split: train
         path: agentic_tool_calling_dpo.jsonl
+  - config_name: arete_values_dpo
+    data_files:
+      - split: train
+        path: arete_values_dpo.jsonl
 ---
 
-# Sovereign Code Audit, Lego-First & Agentic Tool-Calling SFT + DPO Dataset (\`krusch-stack\`)
+# Sovereign Code Audit, Lego-First, Agentic Tool-Calling & Curated Arete Alignment SFT + DPO Dataset (\`krusch-stack\`)
 
 [![KruschStack](https://img.shields.io/badge/Powered%20By-KruschStack-cyan.svg)](https://github.com/kruschdev/krusch-stack)
 [![MCP Compatible](https://img.shields.io/badge/MCP-39%20Tools-blueviolet.svg)](https://github.com/kruschdev/krusch-stack)
@@ -314,7 +327,7 @@ configs:
 
 > **Trained Through [KruschStack](https://github.com/kruschdev/krusch-stack) to Benefit [KruschStack](https://github.com/kruschdev/krusch-stack)**
 >
-> Every trajectory and preference pair in this dataset (\`${totalRecords.toLocaleString('en-US')}\` total Zero-Leak records across 7 splits) was synthesized, AST-grounded, and unit-test verified through **[KruschStack (\`krusch-stack\`)](https://github.com/kruschdev/krusch-stack)** — the Unified 7-Pillar, 39-Tool Model Context Protocol (MCP) & Agentic Coding Stack (\`npx krusch-stack init\`). It powers the **\`L1.5\` 8B Edge Agent**, **\`L2\` 30B Local Student**, and **\`L2.5\` 120B Burst Teacher** inside the **KruschStack Cognitive Cascade Router**.
+> Every trajectory and preference pair in this dataset (\`${totalRecords.toLocaleString('en-US')}\` total Zero-Leak records across 9 splits) was synthesized, AST-grounded, or quality-filtered and verified through **[KruschStack (\`krusch-stack\`)](https://github.com/kruschdev/krusch-stack)** — my Unified 7-Pillar, 39-Tool Model Context Protocol (MCP) & Agentic Coding Stack (\`npx krusch-stack init\`). It powers the **\`L1.5\` 8B Edge Agent**, **\`L2\` 30B Local MoE Student (\`Wave-7\`)**, **\`L2.2\` 31B Dense Reasoning Specialist**, and **\`L2.5\` 120B Burst Teacher** inside my **KruschStack Cognitive Cascade Router**.
 
 ---
 
@@ -322,24 +335,27 @@ configs:
 
 - **🛠️ KruschStack (7-Pillar 39-Tool MCP Stack)**: [\`github.com/kruschdev/krusch-stack\`](https://github.com/kruschdev/krusch-stack) (\`npx krusch-stack init\`)
 - **🤖 Jean SRE by Kruschdev (24/7 Autonomous Auditor & Distillation Harness)**: [\`github.com/kruschdev/Jean-SRE-by-kruschdev\`](https://github.com/kruschdev/Jean-SRE-by-kruschdev)
+- **🥇 \`#1 Open-Weights\` 31B Dense QLoRA (\`L2.2\` Tier, \`57.33%\` DolphinBench)**: [\`krush420/gemma4-31b-sre-lora\`](https://huggingface.co/krush420/gemma4-31b-sre-lora) (for \`google/gemma-4-31b-it\`)
 - **🪶 8B Edge Agent & Referee LoRA (\`L1.5\` Local Tier)**: [\`krush420/llama3-hermes3-8b-sre-lora\`](https://huggingface.co/krush420/llama3-hermes3-8b-sre-lora) (Built with Meta Llama 3 for \`NousResearch/Hermes-3-Llama-3.1-8B\`)
-- **⚡ 30B Student QLoRA (\`L2\` Local MoE Tier)**: [\`krush420/qwen3-coder-30b-sre-lora\`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for \`Qwen/Qwen3-Coder-30B-A3B-Instruct\`)
+- **⚡ 30B Student QLoRA (\`L2\` Local MoE Tier, \`Wave-7\` \`125.8–131.5 tok/s\`)**: [\`krush420/qwen3-coder-30b-sre-lora\`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for \`Qwen/Qwen3-Coder-30B-A3B-Instruct\`)
 - **🧠 120B Teacher QLoRA (\`L2.5\` Burst Tier)**: [\`krush420/gpt-oss-120b-sre-lora\`](https://huggingface.co/krush420/gpt-oss-120b-sre-lora) (for \`openai/gpt-oss-120b\`)
-- **🏆 Hermetic Benchmark Audit Logs (\`75/75\` Gates, \`40\` Raw JSON + \`1\` PR #169 Live Receipt Audit Logs across \`325,000+\` Queries/Traces, incl. \`19\` Official DolphinBench \`600\` Runs / \`11,400\` Traces)**: [\`krush420/sovereign-g4-benchmarks\`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [\`krush420/sovereign-router-arena\`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
+- **🏆 Hermetic Benchmark Audit Logs (\`75/75\` Gates, \`48\` Raw JSON + \`1\` PR #169 Live Receipt Audit Logs across \`333,000+\` Queries/Traces, incl. \`27\` Official DolphinBench \`600\` Runs / \`16,200\` Traces)**: [\`krush420/sovereign-g4-benchmarks\`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [\`krush420/sovereign-router-arena\`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
 
 ---
 
 ## 📊 Dataset Splits
 
-| Config | Split Name | File | Rows | Teacher Model | Description |
+| Config | Split Name | File | Rows | Teacher / Source | Description |
 | :--- | :--- | :--- | :---: | :--- | :--- |
 | \`default\` | \`argon_golden_remediations\` | \`argon_golden_remediations.jsonl\` | **${stats.argonCount}** | \`gemini-4-argon\` | **Test-Verified Code Patches & Unit Tests**: Pairs structured Master Audit Backlog cards (\`BUG-*\`, \`SEC-*\`, \`ARCH-*\`, \`TEST-*\`) with complete, unit-test-verified source file patches (\`npm test\` / \`pytest\`, exit code \`0\`) across JavaScript/ESM, TypeScript, React, and Python 3.12 repositories. |
-| \`default\` | \`lego_and_referee_calibration_sft\` | \`lego_and_referee_calibration_sft.jsonl\` | **${stats.legoCalibrationCount}** | \`gemini-4-argon\` | **Calibrated \`CLEAN_PASS\`, P0/P1 Remediations, Lego-First & Rule-of-3 Scout Idioms**: Live-source \`CLEAN_PASS\` Referee convergence verdicts (\`findings: []\`), ground-truth security/concurrency bug remediations, zero-boilerplate \`@krusch/toolkit\` v1.7 / \`krusch_toolkit\` v1.6 synthesis, and cross-repository Rule-of-3 \`lego_scout\` triage. |
-| \`agentic_tool_calling_sft\` | \`train\` | \`agentic_tool_calling_sft.jsonl\` | **${stats.agenticSftCount}** | \`gemini-4-argon\` | **Unified Multi-Turn SRE & Workspace Function-Calling SFT**: Structured \`tools\` + \`assistant.tool_calls\` + \`role: "tool"\` trajectories across 3-Tier MCP code audits/2PC staging and generalist workspace operations (temporal supersession, standing constraints, side-effect execution). |
+| \`default\` | \`lego_and_referee_calibration_sft\` | \`lego_and_referee_calibration_sft.jsonl\` | **${stats.legoCalibrationCount}** | \`gemini-4-argon\` | **Calibrated \`CLEAN_PASS\`, P0/P1 Remediations, Lego-First & Rule-of-3 Scout Idioms**: Live-source \`CLEAN_PASS\` Referee convergence verdicts (\`findings: []\`), ground-truth security/concurrency bug remediations, zero-boilerplate \`@krusch/toolkit\` v1.8 / \`krusch_toolkit\` v1.6 synthesis, and cross-repository Rule-of-3 \`lego_scout\` triage. |
+| \`agentic_tool_calling_sft\` | \`train\` | \`agentic_tool_calling_sft.jsonl\` | **${stats.agenticSftCount}** | \`gemini-4-argon\` | **Unified Multi-Turn SRE & Workspace Function-Calling SFT**: Structured \`tools\` + \`assistant.tool_calls\` + \`role: "tool"\` trajectories across 3-Tier MCP code audits/2PC staging and generalist workspace operations (partial-briefing gap search, temporal supersession, standing constraints, side-effect execution). |
+| \`arete_values_sft\` | \`train\` | \`arete_values_sft.jsonl\` | **${stats.areteSftCount}** | [\`NousResearch/arete-data-pairs\`](https://huggingface.co/datasets/NousResearch/arete-data-pairs) (\`Apache-2.0\`) | **Curated Zero-Defect Statutory & Analytical Non-Refusal SFT (\`20\` per category across 7 categories)**: Strictly filtered from \`34,878\` raw rows requiring \`in_sft_accepted=true\`, \`accuracy=5\`, \`independence=5\`, \`helpfulness>=4\`, \`balance>=4\`, \`language>=4\`, and \`0\` issue tags (\`reasons=[]\`). |
 | \`default\` | \`elitist_120b_teacher\` | \`elitist_120b_teacher.jsonl\` | **${stats.elitistCount}** | \`gpt-oss:120b\` + \`gemini-4-argon\` | **Curated High-Signal QLoRA Training Split**: Rejection-sampled trajectories requiring verbatim \`file:line\` grounding, concrete code blocks/diffs, calibrated \`CLEAN_PASS\` verdicts, Lego-First / Lego-Scout idioms, and 2x-oversampled Golden Remediations. |
 | \`default\` | \`code_audit_11phase_sft\` | \`code_audit_11phase_sft.jsonl\` | **${stats.codeAuditCount}** | \`gpt-oss:120b\` | **Full 11-Phase Code Audit Corpus**: Complete phase-by-phase codebase investigations (\`0_ORIENTATION\` through \`2_MASTER_BACKLOG\`) using AST symbol search (\`search_symbols\`, \`dependency_graph\`), bounded file reads (\`read_file path:start-end\`), and live test verification. |
 | \`referee_calibration_dpo\` | \`train\` | \`referee_calibration_dpo.jsonl\` | **${stats.dpoCount}** | \`gemini-4-argon\` + \`gpt-oss-sre:120b\` | **Balanced Referee & Architecture DPO Preference Pairs (\`trl.DPOTrainer\`)**: Precision pairs, Recall pairs, and Architecture Calibration pairs. |
-| \`agentic_tool_calling_dpo\` | \`train\` | \`agentic_tool_calling_dpo.jsonl\` | **${stats.agenticDpoCount}** | \`gemini-4-argon\` | **Multi-Turn Tool-Action Calibration DPO Pairs**: Penalizes prose-only Markdown dumps when action tools are bound (\`action_over_prose\`), infinite read-only search loops (\`bounded_search_no_loop\`), and false refusals on benign operational tasks (\`benign_execution_no_false_refusal\`). |
+| \`agentic_tool_calling_dpo\` | \`train\` | \`agentic_tool_calling_dpo.jsonl\` | **${stats.agenticDpoCount}** | \`gemini-4-argon\` | **Multi-Turn Tool-Action Calibration DPO Pairs**: Penalizes prose-only Markdown dumps when action tools are bound (\`action_over_prose\`), infinite read-only search loops (\`bounded_search_no_loop\`), false refusals on benign operational tasks (\`benign_execution_no_false_refusal\`), and unverified partial-briefing commits (\`gap_search_before_commit\`). |
+| \`arete_values_dpo\` | \`train\` | \`arete_values_dpo.jsonl\` | **${stats.areteDpoCount}** | [\`NousResearch/arete-data-pairs\`](https://huggingface.co/datasets/NousResearch/arete-data-pairs) (\`Apache-2.0\`) | **High-Contrast Non-Refusal & Statutory Independence DPO Pairs (\`6\` per category across 7 categories)**: Pairs where the starting Qwen checkpoint exhibited explicit refusal, canned evasion, or state-propaganda framing (\`rejected\`) against rigorous, multi-perspective Inkling teacher analysis (\`chosen\`, \`accuracy>=4\`, \`independence=5\`). |
 
 ---
 
@@ -348,16 +364,24 @@ configs:
 1. **Verbatim Line-Grounded Auditing (Zero Code Hallucination):** Every claim cites exact \`file:startLine-endLine\` coordinates verified against \`krusch-git\` AST symbol graphs and bounded source windows.
 2. **Ground-Truth False-Positive Refutation & DPO Calibration:** Models cross-check prior hypotheses against live source code and distinguish helper contracts (e.g., HTTP header-map builders) from JSON endpoint envelopes.
 3. **Zero-Finding Convergence (\`CLEAN_PASS\`):** Models emit \`findings: []\` when production code satisfies frozen invariants rather than inventing stylistic nitpicks.
-4. **Lego-First Toolkit Assembly & Rule-of-3 Scouting (\`INV-LEGO-01..24\`):** Models compose HTTP/SSE/MCP/PG/SQLite/Security/Edge/Webhooks/CLI/FastAPI services from verified runtime bricks while enforcing the \`>= 3\` repository Rule-of-3 anti-bloat gate.
-5. **Unified Multi-Turn Function-Calling Agency:** Models preserve native Harmony \`<|channel|>commentary\` and Qwen3 \`<tool_call>\` routing alongside Referee auditing, obeying temporal state updates and invoking side-effect tools decisively.
+4. **Lego-First Toolkit Assembly & Rule-of-3 Scouting (\`INV-LEGO-01..34\`):** Models compose HTTP/SSE/MCP/PG/SQLite/Security/Edge/Webhooks/Idempotency/Audit-Log/RBAC/Pagination/CLI/FastAPI services from verified runtime bricks while enforcing the \`>= 3\` repository Rule-of-3 anti-bloat gate.
+5. **Unified Multi-Turn Function-Calling Agency & Non-Refusal Statutory Analysis (\`Wave-7\`):** Models preserve native Harmony \`<|channel|>commentary\`, Gemma 4 \`<|channel>thought\`, and Qwen3 \`<tool_call>\` routing alongside Referee auditing and zero-refusal statutory/security compliance analysis (\`125.8–131.5 tok/s\` on \`Qwen3-Coder-30B-A3B\`, \`5.5x\` faster than dense \`27B\`).
 `;
     fs.writeFileSync(path.join(publicDir, 'README.md'), readme, 'utf8');
+}
+
+function countJsonlLines(filePath) {
+    if (!fs.existsSync(filePath)) return 0;
+    return fs
+        .readFileSync(filePath, 'utf8')
+        .split('\n')
+        .filter((l) => l.trim().length > 0).length;
 }
 
 function main() {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
-    // 0. Harvest live Lego-First + Calibrated CLEAN_PASS + Wave-4 Agentic Tool-Calling splits
+    // 0. Harvest live Lego-First + Calibrated CLEAN_PASS + Wave-6 Agentic Tool-Calling splits
     harvestLegoAndRefereeDatasets({
         sftOutPath: LEGO_CALIBRATION_SFT_PATH,
         dpoOutPath: REFEREE_DPO_PATH
@@ -374,6 +398,8 @@ function main() {
     const agenticSftRes = sanitizeJsonlFileInPlace(AGENTIC_TOOL_CALLING_SFT_PATH);
     const dpoRes = sanitizeDpoFileInPlace(REFEREE_DPO_PATH);
     const agenticDpoRes = sanitizeDpoFileInPlace(AGENTIC_TOOL_CALLING_DPO_PATH);
+    const areteSftCount = countJsonlLines(ARETE_VALUES_SFT_PATH);
+    const areteDpoCount = countJsonlLines(ARETE_VALUES_DPO_PATH);
 
     // 2. Rebuild Elitist 120B Teacher dataset from sanitized SFT + Argon + Lego/Referee Calibration
     exportElitist120bDataset(SFT_PATH, ARGON_PATH, ELITIST_PATH, {
@@ -387,15 +413,23 @@ function main() {
     const publicCodeAuditPath = path.join(PUBLIC_DIR, 'code_audit_11phase_sft.jsonl');
     const publicLegoCalPath = path.join(PUBLIC_DIR, 'lego_and_referee_calibration_sft.jsonl');
     const publicAgenticSftPath = path.join(PUBLIC_DIR, 'agentic_tool_calling_sft.jsonl');
+    const publicAreteSftPath = path.join(PUBLIC_DIR, 'arete_values_sft.jsonl');
     const publicDpoPath = path.join(PUBLIC_DIR, 'referee_calibration_dpo.jsonl');
     const publicAgenticDpoPath = path.join(PUBLIC_DIR, 'agentic_tool_calling_dpo.jsonl');
+    const publicAreteDpoPath = path.join(PUBLIC_DIR, 'arete_values_dpo.jsonl');
 
     fs.copyFileSync(ARGON_PATH, publicArgonPath);
     fs.copyFileSync(ELITIST_PATH, publicElitistPath);
     fs.copyFileSync(LEGO_CALIBRATION_SFT_PATH, publicLegoCalPath);
     fs.copyFileSync(AGENTIC_TOOL_CALLING_SFT_PATH, publicAgenticSftPath);
+    if (fs.existsSync(ARETE_VALUES_SFT_PATH)) {
+        fs.copyFileSync(ARETE_VALUES_SFT_PATH, publicAreteSftPath);
+    }
     fs.copyFileSync(REFEREE_DPO_PATH, publicDpoPath);
     fs.copyFileSync(AGENTIC_TOOL_CALLING_DPO_PATH, publicAgenticDpoPath);
+    if (fs.existsSync(ARETE_VALUES_DPO_PATH)) {
+        fs.copyFileSync(ARETE_VALUES_DPO_PATH, publicAreteDpoPath);
+    }
 
     const portableCodeAuditRows = sftRes.rows.filter(
         (r) =>
@@ -413,26 +447,32 @@ function main() {
         argonCount: argonRes.total,
         legoCalibrationCount: legoCalRes.total,
         agenticSftCount: agenticSftRes.total,
+        areteSftCount,
         dpoCount: dpoRes.total,
         agenticDpoCount: agenticDpoRes.total,
+        areteDpoCount,
         elitistCount: elitistRes.total,
         codeAuditCount: portableCodeAuditRows.length
     });
 
-    // 4. Run Zero-Leak Verification Gate across all 14 training & public files
+    // 4. Run Zero-Leak Verification Gate across all 18 training & public files
     const checks = [
         verifyZeroLeaks(ARGON_PATH),
         verifyZeroLeaks(LEGO_CALIBRATION_SFT_PATH),
         verifyZeroLeaks(AGENTIC_TOOL_CALLING_SFT_PATH),
+        verifyZeroLeaks(ARETE_VALUES_SFT_PATH),
         verifyZeroLeaks(REFEREE_DPO_PATH),
         verifyZeroLeaks(AGENTIC_TOOL_CALLING_DPO_PATH),
+        verifyZeroLeaks(ARETE_VALUES_DPO_PATH),
         verifyZeroLeaks(ELITIST_PATH),
         verifyZeroLeaks(SFT_PATH),
         verifyZeroLeaks(publicArgonPath),
         verifyZeroLeaks(publicLegoCalPath),
         verifyZeroLeaks(publicAgenticSftPath),
+        verifyZeroLeaks(publicAreteSftPath),
         verifyZeroLeaks(publicDpoPath),
         verifyZeroLeaks(publicAgenticDpoPath),
+        verifyZeroLeaks(publicAreteDpoPath),
         verifyZeroLeaks(publicElitistPath),
         verifyZeroLeaks(publicCodeAuditPath)
     ];
