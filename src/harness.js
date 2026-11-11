@@ -1161,6 +1161,36 @@ if (isMainModule) {
             });
         });
 
+        app.get('/quantcheck', requireJeanAuth, async (req, res) => {
+            try {
+                const { auditFleetQuantization, auditOllamaEndpointQuantization } = await import('./quantcheck.js');
+                const configuredUrls = Array.from(
+                    new Set(
+                        [
+                            ...(process.env.OLLAMA_FLEET_URLS || '').split(','),
+                            PERSONA_OLLAMA_URL,
+                            EXECUTOR_OLLAMA_URL,
+                            process.env.OLLAMA_EMBED_HOST
+                        ]
+                            .map((u) => String(u || '').trim().replace(/\/+$/, ''))
+                            .filter((u) => /^https?:\/\//i.test(u))
+                    )
+                );
+                const targetModel = typeof req.query?.model === 'string' && req.query.model.trim()
+                    ? req.query.model.trim()
+                    : null;
+                const envelope = targetModel
+                    ? await auditOllamaEndpointQuantization({
+                          baseUrl: configuredUrls[0] || 'http://127.0.0.1:11434',
+                          targetModel
+                      })
+                    : await auditFleetQuantization(configuredUrls);
+                res.status(envelope.ok ? 200 : 503).json(envelope);
+            } catch (error) {
+                res.status(500).json({ ok: false, tool: 'jean.quantcheck', error: { code: 'QUANTCHECK_ERROR', message: error.message } });
+            }
+        });
+
         const port = process.env.PORT || 3000;
         app.listen(port, async () => {
             console.log(`Personal Agent harness running on port ${port}`);
