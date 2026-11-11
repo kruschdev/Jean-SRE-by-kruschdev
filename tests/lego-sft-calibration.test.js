@@ -20,6 +20,7 @@ import {
     buildLegoScoutContextBrief,
     buildProjectLegoBoilerplateBrief,
     appendLegoScoutBacklogEntry,
+    parseExecutableAction,
     parseMasterBacklogCards
 } from '../src/jean_sre_sweep.js';
 
@@ -754,6 +755,78 @@ print(json.dumps({"ok": True, "spans": len(spans), "meta": meta}))
         assert.equal(parsed.ok, true);
         assert.equal(parsed.spans, 2);
         assert.equal(parsed.meta.ref_adapter_anchored, true);
+    });
+
+    test('parseExecutableAction preserves /home/krusch/homelab for node="krusch" even when HOMELAB_ROOT=/home/agent/homelab', () => {
+        const directKrusch = parseExecutableAction(
+            "find_large_files({ node: 'krusch', path: '/home/agent/homelab', minSizeMB: 50 })"
+        );
+        assert.equal(directKrusch.kind, 'sentinel_tool');
+        assert.equal(directKrusch.toolArgs.node, 'krusch');
+        assert.equal(directKrusch.toolArgs.path, '/home/krusch/homelab');
+
+        const mcpKrusch = parseExecutableAction(
+            "krusch_fs_page_tree({ node: 'krusch', path: '/home/agent/homelab/GEMINI_INFLIGHT.md' })"
+        );
+        assert.equal(mcpKrusch.kind, 'mcp_tool');
+        assert.equal(mcpKrusch.toolArgs.node, 'krusch');
+        assert.equal(mcpKrusch.toolArgs.path, '/home/krusch/homelab/GEMINI_INFLIGHT.md');
+    });
+
+    test('parseMasterBacklogCards filters self-refuted cards while retaining actionable defects', () => {
+        const selfRefutedBacklog = [
+            '### 1. SUMMARY TABLE',
+            '| ID | Title | Severity | Effort |',
+            '|----|-------|----------|--------|',
+            '| BUG-01 | Verify CLI --help behavior | P1 | S |',
+            '| SEC-01 | Verify WebSocket token auth | P2 | S |',
+            '| BUG-03 | Silent error swallowing in SQLite corruption recovery | P1 | S |',
+            '| BUG-02 | Missing null guard on empty payload | P1 | S |',
+            '',
+            '### 2. DETAILED CARDS',
+            '#### BUG-01: Verify CLI --help behavior',
+            '- **Severity:** P1',
+            '- **Effort:** S',
+            '- **Evidence:** `src/cli.js:12`',
+            '- **Fix Instructions:** Status: REFUTED; No fix required, working as designed.',
+            '',
+            '#### SEC-01: Verify WebSocket token auth',
+            '- **Severity:** P2',
+            '- **Effort:** S',
+            '- **Evidence:** `src/ws.js:44`',
+            '- **Fix Instructions:** Not a security flaw; no changes required.',
+            '',
+            '#### BUG-03: Silent error swallowing in SQLite corruption recovery',
+            '- **Severity:** P1',
+            '- **Effort:** S',
+            '- **Evidence:** `src/db/sqlite.js:314`',
+            '- **Fix Instructions:** The catch {} blocks on lines 314 and 320 are part of structured recovery. No action is required.',
+            '',
+            '#### BUG-02: Missing null guard on empty payload',
+            '- **Severity:** P1',
+            '- **Effort:** S',
+            '- **Evidence:** `src/handler.js:88`',
+            '- **Fix Instructions:** Add early return when payload is null; no changes needed in src/router.js.'
+        ].join('\n');
+
+        const cards = parseMasterBacklogCards(selfRefutedBacklog);
+        assert.equal(cards.length, 1);
+        assert.equal(cards[0].id, 'BUG-02');
+
+        const allRefutedBacklog = [
+            '### 1. SUMMARY TABLE',
+            '| ID | Title | Severity | Effort |',
+            '|----|-------|----------|--------|',
+            '| BUG-01 | Check rollback behavior | P2 | S |',
+            '',
+            '#### BUG-01: Check rollback behavior',
+            '- **Severity:** P2',
+            '- **Effort:** S',
+            '- **Status:** CONFIRMED — The current behavior is intentional and documented.',
+            '- **Fix Instructions:** None required.'
+        ].join('\n');
+
+        assert.deepEqual(parseMasterBacklogCards(allRefutedBacklog), []);
     });
 });
 

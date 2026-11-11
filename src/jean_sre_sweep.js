@@ -960,12 +960,15 @@ async function saveProjectBlocker(blockerContent, targetProject, { skipStores = 
 
 // ── DBOS Swarm Intent Dispatcher & Inline L2 Executor ────
 
-function normalizeHomelabPath(str) {
+function normalizeHomelabPath(str, targetNode = null) {
     if (!str) return '';
+    const rootForNode = String(targetNode || '').trim().toLowerCase() === 'krusch'
+        ? '/home/krusch/homelab'
+        : HOMELAB_ROOT;
     return String(str)
-        .replace(/\/home\/kruschdev\/homelab/g, HOMELAB_ROOT)
-        .replace(/\/home\/agent\/homelab/g, HOMELAB_ROOT)
-        .replace(/\/home\/krusch\/homelab/g, HOMELAB_ROOT);
+        .replace(/\/home\/kruschdev\/homelab/g, rootForNode)
+        .replace(/\/home\/agent\/homelab/g, rootForNode)
+        .replace(/\/home\/krusch\/homelab/g, rootForNode);
 }
 
 function parseLooseJsonObject(rawObjStr, fallbackNode = 'kruschserv') {
@@ -1293,9 +1296,12 @@ function parseMcpToolAction(rawAction, projectPath, reasonText) {
 
     if (baseName === 'krusch_fs_page_tree' || baseName === 'krusch_fs_read_page') {
         let fp = toolArgs.file_path || toolArgs.path || '';
-        fp = normalizeHomelabPath(fp);
+        fp = normalizeHomelabPath(fp, toolArgs.node || null);
         if (fp && !fp.startsWith('/')) {
-            fp = join(projectPath || HOMELAB_ROOT, fp);
+            const baseRoot = String(toolArgs.node || '').trim().toLowerCase() === 'krusch'
+                ? '/home/krusch/homelab'
+                : (projectPath || HOMELAB_ROOT);
+            fp = join(baseRoot, fp);
         }
         toolArgs.file_path = fp;
         toolArgs.path = fp;
@@ -1328,7 +1334,8 @@ function parseMcpToolAction(rawAction, projectPath, reasonText) {
 
 function parseExecutableAction(taskStr, projectPath = HOMELAB_ROOT) {
     const parts = String(taskStr || '').split(/\*\*Reason\*\*\s*:|\bReason\s*:/i);
-    const rawAction = normalizeHomelabPath(parts[0].trim());
+    const nodeHintMatch = parts[0].match(/\bnode\s*["']?\s*:\s*["']([a-zA-Z0-9_-]+)["']/i);
+    const rawAction = normalizeHomelabPath(parts[0].trim(), nodeHintMatch?.[1] || null);
     const reasonText = (parts[1] || '').trim();
 
     // 1. Sentinel tool call in Infra Mode (including real FRAXIS self-state security tools)
@@ -3022,6 +3029,28 @@ function extractStaleCleanupCards(backlogText) {
     return [...staleMap.values()];
 }
 
+function isSelfRefutedCard({ title = '', fixSummary = '', body = '' } = {}) {
+    const cleanTitle = String(title || '').trim();
+    const cleanFix = String(fixSummary || '').trim();
+    const cleanBody = String(body || '');
+    if (/^(?:none|clean[_\s-]*pass|no\s+(?:verified|actionable|confirmed)\s+(?:bugs?|defects?|issues?|findings?)\b)/i.test(cleanTitle)) {
+        return true;
+    }
+    if (/\b(?:status|verdict)\s*:\s*\*{0,2}\s*(?:refuted|false[\s_-]*positive|not\s+a\s+(?:bug|defect|flaw|vulnerability)|clean[_\s-]*pass|working\s+as\s+(?:intended|designed))\b/i.test(cleanBody)) {
+        return true;
+    }
+    if (/\bstatus\s*:\s*\*{0,2}\s*confirmed\b[^\n]*(?:\bintentional\b|\bworking\s+as\s+(?:intended|designed)\b)/i.test(cleanBody)) {
+        return true;
+    }
+    if (/^(?:status\s*:[^;.\n]+[;.\s]+)?(?:none(?:\s+(?:needed|required))?|n\/a|no\s+(?:code\s+)?(?:action|fix|changes?|remediation|modifications?)\s+(?:is\s+)?(?:needed|required|necessary)|not\s+a\s+(?:security\s+)?(?:flaw|bug|defect|vulnerability)|keep\s+(?:as[\s-]*is|current\s+(?:behavior|implementation)))\b/i.test(cleanFix)) {
+        return true;
+    }
+    if (/(?:^|[.;!]\s*)(?:no\s+(?:code\s+|further\s+)?(?:action|fix|changes?|remediation|modifications?)\s+(?:is\s+|are\s+)?(?:needed|required|necessary)(?!\s+(?:in|on|to|for)\b)|none\s+(?:is\s+)?(?:needed|required))\b/i.test(cleanFix)) {
+        return true;
+    }
+    return false;
+}
+
 /**
  * Parse task cards from a Master Backlog markdown document.
  * Honors Referee `### 1. SUMMARY TABLE` verdicts (`CLEAN_PASS` and verified ID allowlist)
@@ -3042,10 +3071,12 @@ function parseMasterBacklogCards(backlogText) {
         while ((m = rowRegex.exec(summarySection)) !== null) {
             const id = m[1].trim().toUpperCase();
             if (id.startsWith('STALE-')) continue;
+            const title = m[2].replace(/^\*\*|\*\*$/g, '').trim();
             summaryIds.add(id);
+            if (isSelfRefutedCard({ title })) continue;
             cards.set(id, {
                 id,
-                title: m[2].replace(/^\*\*|\*\*$/g, '').trim(),
+                title,
                 severity: m[3].trim().toUpperCase(),
                 effort: m[4].trim().toUpperCase(),
                 evidence: 'project-wide',
@@ -3062,9 +3093,11 @@ function parseMasterBacklogCards(backlogText) {
         while ((m = rowRegex.exec(scanText)) !== null) {
             const id = m[1].trim().toUpperCase();
             if (id.startsWith('STALE-')) continue;
+            const title = m[2].replace(/^\*\*|\*\*$/g, '').trim();
+            if (isSelfRefutedCard({ title })) continue;
             cards.set(id, {
                 id,
-                title: m[2].replace(/^\*\*|\*\*$/g, '').trim(),
+                title,
                 severity: m[3].trim().toUpperCase(),
                 effort: m[4].trim().toUpperCase(),
                 evidence: 'project-wide',
@@ -3097,6 +3130,11 @@ function parseMasterBacklogCards(backlogText) {
         const fixSummary = fixMatch
             ? fixMatch[1].trim().split('\n').map(l => l.trim().replace(/^[-*]\s*/, '')).filter(Boolean).slice(0, 2).join('; ')
             : (existing.fixSummary || '');
+
+        if (isSelfRefutedCard({ title, fixSummary, body })) {
+            cards.delete(id);
+            continue;
+        }
 
         cards.set(id, { id, title, severity, effort, evidence, fixSummary });
     }
