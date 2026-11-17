@@ -6,6 +6,7 @@ import { loadProjectConfig, envOr } from '@krusch/toolkit/config';
 import { resolveModelConfig } from '@krusch/toolkit/llm';
 import { scoutHomelabLegoCandidates } from '@krusch/toolkit/lego-scout';
 import { auditBoilerplateText } from '@krusch/toolkit/catalog';
+import { stageScoutCandidateSpecs, auditRepoBrickLocks } from '@krusch/toolkit/brick-exchange';
 import { fileURLToPath } from 'url';
 import { dirname, join, extname, basename } from 'path';
 import os from 'os';
@@ -2779,11 +2780,11 @@ function buildLegoScoutContextBrief(homelabRoot = HOMELAB_ROOT, options = {}) {
         const candidates = d.candidateClusters.filter((c) => c.status === 'CANDIDATE_MEETS_RULE_OF_3');
         if (candidates.length > 0) {
             lines.push(
-                `- **3. Candidate Bricks Meeting Rule-of-${d.ruleOfThreeThreshold} (\`CANDIDATE_MEETS_RULE_OF_3\` — propose spec under \`/jean-loop-gate\`):**`
+                `- **3. Candidate Bricks Meeting Rule-of-${d.ruleOfThreeThreshold} (\`CANDIDATE_MEETS_RULE_OF_3\` — stage via \`stageScoutCandidateSpecs\` & \`krusch-lego seal\` under \`/jean-loop-gate\`):**`
             );
             for (const c of candidates) {
                 lines.push(
-                    `  - \`${c.id}\` (\`${c.projectCount}\` repos >= ${d.ruleOfThreeThreshold}) → \`${c.proposedBrickImport}\` | repos: ${c.projects.slice(0, 5).join(', ')} | sample: \`${c.sampleEvidence[0] || ''}\``
+                    `  - \`${c.id}\` (\`${c.projectCount}\` repos >= ${d.ruleOfThreeThreshold}) → \`${c.proposedBrickImport}\` | repos: ${c.projects.slice(0, 5).join(', ')} | sample: \`${c.sampleEvidence[0] || ''}\` | seal: \`krusch-lego seal ./${c.id}.spec.json --out ./${c.id}.brick.json\``
                 );
             }
         } else {
@@ -2838,9 +2839,17 @@ function buildProjectLegoBoilerplateBrief(projectPath, maxFiles = 24) {
                 if (hits.length >= 6) break;
             }
         }
+        const lockAudit = auditRepoBrickLocks(projectPath);
+        if (lockAudit?.ok && lockAudit.data?.lockfilePresent && !lockAudit.data.clean) {
+            for (const lf of (lockAudit.data.findings || []).slice(0, 3)) {
+                hits.push(
+                    `- \`.brick-lock.json\` (\`${lf.brickId || 'brick'}\`): \`${lf.code || 'BRICK_LOCK_DRIFT'}\` → ${lf.message || 'Vendored sealed brick drifted from Ed25519 attestation'}`
+                );
+            }
+        }
         if (hits.length === 0) return '';
         return [
-            `**🧱 @krusch/toolkit Boilerplate Audit (\`INV-LEGO-01\` — deterministic static hits):**`,
+            `**🧱 @krusch/toolkit Boilerplate & Sealed Brick Audit (\`INV-LEGO-01..35\` — deterministic static hits):**`,
             ...hits
         ].join('\n');
     } catch {

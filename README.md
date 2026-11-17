@@ -75,10 +75,15 @@ For every repository in rotation, Jean SRE executes a deterministic 11-phase inv
 5. **`1.4_CONCURRENCY_STATE`** — Inspect race conditions, promise deduplication, and database transaction boundaries.
 6. **`1.5_ERROR_PROPAGATION`** — Verify deterministic error handling and fallback safety.
 7. **`1.6_RESOURCE_BOUNDS`** — Check memory caps, timeouts, stream backpressure, and cache eviction.
-8. **`1.7_SHARED_TOOLKIT_PARITY`** — Identify duplicate inline helpers that should use shared `@krusch/toolkit` primitives.
+8. **`1.7_SHARED_TOOLKIT_PARITY`** — Identify duplicate inline helpers that should use shared `@krusch/toolkit` primitives, verify vendored `.brick-lock.json` integrity (`auditRepoBrickLocks`), and stage empirical Rule-of-3 clusters (`CANDIDATE_MEETS_RULE_OF_3`) into the `@krusch/toolkit/brick-exchange` inbox (`stageScoutCandidateSpecs`).
 9. **`1.8_DEAD_CODE_DRIFT`** — Detect unreachable symbols, stale exports, and documentation drift.
 10. **`1.9_TEST_GAP_VERIFICATION`** — Execute the live project test suite (`runProjectVerificationSuite`) and pinpoint untested edge cases.
 11. **`2_MASTER_BACKLOG`** — Emit line-grounded `BUG-*`, `SEC-*`, `ARCH-*`, `TEST-*`, or `STALE-*` cards — or converge to `CLEAN_PASS` (`0` findings) when the repository is clean.
+
+### Closed-Loop `lego_scout` & Validated Brick Exchange Integration (`@krusch/toolkit/brick-exchange`)
+During background `lego_scout` and repository sweep cycles (`src/jean_sre_sweep.js`), Jean SRE pairs `@krusch/toolkit/lego-scout` (`scoutHomelabLegoCandidates`) with `@krusch/toolkit/brick-exchange`:
+- **Rule-of-3 Candidate Staging (`stageScoutCandidateSpecs`)**: When an unextracted infrastructure pattern appears across `>= 3` repositories (`CANDIDATE_MEETS_RULE_OF_3`), Jean SRE automatically drafts candidate brick specifications into the Brick Exchange inbox for sandboxed verification, adversarial fault-injection testing, and Ed25519 sealing (`krusch-lego seal`).
+- **Cryptographic `.brick-lock.json` Drift Verification (`auditRepoBrickLocks`)**: On every project audit, Jean SRE verifies that vendored `bricks/<id>/index.js` files match their Ed25519-sealed `codeHash` and `bundleHash` in `.brick-lock.json`, surfacing unsealed local drift alongside `<1ms` Slop-Breaker findings (`58/58` automated tests passing).
 
 ---
 
