@@ -125,6 +125,14 @@ Paired with `SovereignMemoryStore` (`256/32` Raw-RAG + Porter-FTS5 + 4-Way RRF),
 
 ## ⚡ Quickstart
 
+### Agent-Assisted Setup
+
+Ask your coding agent (Claude Code, Codex, Cursor, Windsurf, or Antigravity):
+
+```text
+Read https://raw.githubusercontent.com/kruschdev/Jean-SRE-by-kruschdev/main/INSTALL.md and set up jean-sre on this machine.
+```
+
 ### 1. Install the KruschStack MCP Ecosystem
 ```bash
 npx krusch-stack init
