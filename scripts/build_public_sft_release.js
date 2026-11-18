@@ -27,6 +27,10 @@ import {
     AGENTIC_TOOL_CALLING_SFT_PATH,
     AGENTIC_TOOL_CALLING_DPO_PATH
 } from './harvest_agentic_tool_calling.js';
+import {
+    harvestAntigravityTraces,
+    ANTIGRAVITY_TRACES_SFT_PATH
+} from './harvest_antigravity_traces.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -381,7 +385,7 @@ function countJsonlLines(filePath) {
 function main() {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
-    // 0. Harvest live Lego-First + Calibrated CLEAN_PASS + Wave-6 Agentic Tool-Calling splits
+    // 0. Harvest live Lego-First + Calibrated CLEAN_PASS + Wave-6 Agentic Tool-Calling + Antigravity Traces splits
     harvestLegoAndRefereeDatasets({
         sftOutPath: LEGO_CALIBRATION_SFT_PATH,
         dpoOutPath: REFEREE_DPO_PATH
@@ -390,12 +394,16 @@ function main() {
         sftOutPath: AGENTIC_TOOL_CALLING_SFT_PATH,
         dpoOutPath: AGENTIC_TOOL_CALLING_DPO_PATH
     });
+    harvestAntigravityTraces({
+        sftOutPath: ANTIGRAVITY_TRACES_SFT_PATH
+    });
 
     // 1. Sanitize all in-place JSONL files
     const argonRes = sanitizeJsonlFileInPlace(ARGON_PATH);
     const sftRes = sanitizeJsonlFileInPlace(SFT_PATH);
     const legoCalRes = sanitizeJsonlFileInPlace(LEGO_CALIBRATION_SFT_PATH);
     const agenticSftRes = sanitizeJsonlFileInPlace(AGENTIC_TOOL_CALLING_SFT_PATH);
+    const agySftRes = sanitizeJsonlFileInPlace(ANTIGRAVITY_TRACES_SFT_PATH);
     const dpoRes = sanitizeDpoFileInPlace(REFEREE_DPO_PATH);
     const agenticDpoRes = sanitizeDpoFileInPlace(AGENTIC_TOOL_CALLING_DPO_PATH);
     const areteSftCount = countJsonlLines(ARETE_VALUES_SFT_PATH);
@@ -413,6 +421,7 @@ function main() {
     const publicCodeAuditPath = path.join(PUBLIC_DIR, 'code_audit_11phase_sft.jsonl');
     const publicLegoCalPath = path.join(PUBLIC_DIR, 'lego_and_referee_calibration_sft.jsonl');
     const publicAgenticSftPath = path.join(PUBLIC_DIR, 'agentic_tool_calling_sft.jsonl');
+    const publicAgySftPath = path.join(PUBLIC_DIR, 'antigravity_traces_sft.jsonl');
     const publicAreteSftPath = path.join(PUBLIC_DIR, 'arete_values_sft.jsonl');
     const publicDpoPath = path.join(PUBLIC_DIR, 'referee_calibration_dpo.jsonl');
     const publicAgenticDpoPath = path.join(PUBLIC_DIR, 'agentic_tool_calling_dpo.jsonl');
@@ -422,6 +431,9 @@ function main() {
     fs.copyFileSync(ELITIST_PATH, publicElitistPath);
     fs.copyFileSync(LEGO_CALIBRATION_SFT_PATH, publicLegoCalPath);
     fs.copyFileSync(AGENTIC_TOOL_CALLING_SFT_PATH, publicAgenticSftPath);
+    if (agySftRes.total > 0 && fs.existsSync(ANTIGRAVITY_TRACES_SFT_PATH)) {
+        fs.copyFileSync(ANTIGRAVITY_TRACES_SFT_PATH, publicAgySftPath);
+    }
     if (fs.existsSync(ARETE_VALUES_SFT_PATH)) {
         fs.copyFileSync(ARETE_VALUES_SFT_PATH, publicAreteSftPath);
     }
@@ -455,11 +467,12 @@ function main() {
         codeAuditCount: portableCodeAuditRows.length
     });
 
-    // 4. Run Zero-Leak Verification Gate across all 18 training & public files
+    // 4. Run Zero-Leak Verification Gate across all training & public files
     const checks = [
         verifyZeroLeaks(ARGON_PATH),
         verifyZeroLeaks(LEGO_CALIBRATION_SFT_PATH),
         verifyZeroLeaks(AGENTIC_TOOL_CALLING_SFT_PATH),
+        ...(fs.existsSync(ANTIGRAVITY_TRACES_SFT_PATH) ? [verifyZeroLeaks(ANTIGRAVITY_TRACES_SFT_PATH)] : []),
         verifyZeroLeaks(ARETE_VALUES_SFT_PATH),
         verifyZeroLeaks(REFEREE_DPO_PATH),
         verifyZeroLeaks(AGENTIC_TOOL_CALLING_DPO_PATH),
@@ -469,6 +482,7 @@ function main() {
         verifyZeroLeaks(publicArgonPath),
         verifyZeroLeaks(publicLegoCalPath),
         verifyZeroLeaks(publicAgenticSftPath),
+        ...(fs.existsSync(publicAgySftPath) ? [verifyZeroLeaks(publicAgySftPath)] : []),
         verifyZeroLeaks(publicAreteSftPath),
         verifyZeroLeaks(publicDpoPath),
         verifyZeroLeaks(publicAgenticDpoPath),

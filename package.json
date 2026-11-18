@@ -10,6 +10,7 @@
     "sweep": "node src/jean_sre_sweep.js",
     "quantcheck": "node scripts/quantcheck.js",
     "harvest-sft": "node scripts/harvest_lego_and_referee_calibration.js",
+    "harvest-agy": "node scripts/harvest_antigravity_traces.js",
     "build-sft": "node scripts/build_public_sft_release.js"
   }
 }
