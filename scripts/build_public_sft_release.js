@@ -120,10 +120,17 @@ function normalizeUniformSchema(row, idx = 0) {
     return normalized;
 }
 
+function sanitizeReleaseText(rawText, proj = '') {
+    return normalizePortableSftText(rawText, proj).replace(
+        /\b(?:acme-legacy-billing|legacy-billing-monolith|oscar-tree-service|hermes-parallax)\b/gi,
+        'internal-monolith'
+    );
+}
+
 function sanitizeRowObject(row, idx = 0) {
     const proj = row.project || row.target || row.repo || '';
     const rawJson = JSON.stringify(row);
-    const sanitizedJson = normalizePortableSftText(rawJson, proj);
+    const sanitizedJson = sanitizeReleaseText(rawJson, proj);
     let parsedRow;
     try {
         parsedRow = JSON.parse(sanitizedJson);
@@ -133,7 +140,7 @@ function sanitizeRowObject(row, idx = 0) {
         if (Array.isArray(parsedRow.messages)) {
             parsedRow.messages = parsedRow.messages.map((m) => ({
                 ...m,
-                content: normalizePortableSftText(String(m.content || ''), proj)
+                content: sanitizeReleaseText(String(m.content || ''), proj)
             }));
         }
     }
@@ -166,11 +173,11 @@ function normalizeDpoTurnList(turnOrStr, proj, defaultRole = 'assistant') {
             const rawJson = JSON.stringify(m);
             let scrubbed = m;
             try {
-                scrubbed = JSON.parse(normalizePortableSftText(rawJson, proj));
+                scrubbed = JSON.parse(sanitizeReleaseText(rawJson, proj));
             } catch {
                 scrubbed = {
                     ...m,
-                    content: normalizePortableSftText(String(m.content || ''), proj)
+                    content: sanitizeReleaseText(String(m.content || ''), proj)
                 };
             }
             return normalizeMessageTurn(scrubbed, defaultRole);
@@ -179,7 +186,7 @@ function normalizeDpoTurnList(turnOrStr, proj, defaultRole = 'assistant') {
     return [
         {
             role: defaultRole,
-            content: wellFormed(normalizePortableSftText(String(turnOrStr || ''), proj))
+            content: wellFormed(sanitizeReleaseText(String(turnOrStr || ''), proj))
         }
     ];
 }
@@ -227,6 +234,7 @@ export function verifyZeroLeaks(filePath) {
     let kruschFleetPrompt = 0;
     let secretLike = 0;
     let loneSurrogates = 0;
+    let privateRepos = 0;
 
     for (const l of lines) {
         if (/\/home\/(?:krusch|agent|kruschdev|kruschserv|krmac)/i.test(l)) homePaths++;
@@ -235,6 +243,7 @@ export function verifyZeroLeaks(filePath) {
         if (/Krusch homelab fleet/i.test(l)) kruschFleetPrompt++;
         if (/(?:AIzaSy[A-Za-z0-9_-]{33}|sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,})/.test(l)) secretLike++;
         if (/\\ud[89a-f][0-9a-f]{2}/i.test(l)) loneSurrogates++;
+        if (/\b(?:acme-legacy-billing|legacy-billing-monolith|oscar-tree-service)\b/i.test(l)) privateRepos++;
     }
 
     return {
@@ -246,27 +255,40 @@ export function verifyZeroLeaks(filePath) {
         kruschFleetPrompt,
         secretLike,
         loneSurrogates,
+        privateRepos,
         passed:
             homePaths === 0 &&
             privateIps === 0 &&
             hostnames === 0 &&
             kruschFleetPrompt === 0 &&
             secretLike === 0 &&
-            loneSurrogates === 0
+            loneSurrogates === 0 &&
+            privateRepos === 0
     };
 }
 
 function writeDatasetReadme(publicDir, stats) {
+    const agyCount = stats.agySftCount || 0;
     const totalRecords =
         stats.argonCount +
         stats.legoCalibrationCount +
         stats.agenticSftCount +
+        agyCount +
         stats.areteSftCount +
         stats.dpoCount +
         stats.agenticDpoCount +
         stats.areteDpoCount +
         stats.elitistCount +
         stats.codeAuditCount;
+    const splitTotal = agyCount > 0 ? 10 : 9;
+    const agyYamlBlock =
+        agyCount > 0
+            ? `  - config_name: antigravity_traces_sft\n    data_files:\n      - split: train\n        path: antigravity_traces_sft.jsonl\n`
+            : '';
+    const agyTableRow =
+        agyCount > 0
+            ? `| \`antigravity_traces_sft\` | \`train\` | \`antigravity_traces_sft.jsonl\` | **${agyCount}** | \`gemini-4-argon\` | **Verified Multi-Turn Antigravity Audit & Remediation Trajectories**: Strict 1-call-per-turn (\`tool_calls\` + \`role: "tool"\`) trajectories harvested from verified multi-round CSO/Principal-Engineer \`CLEAN_PASS\` re-audits and unit-test-gated bug remediations across public \`@kruschdev\` open-source repositories. |\n`
+            : '';
     const readme = `---
 license: mit
 task_categories:
@@ -305,7 +327,7 @@ configs:
     data_files:
       - split: train
         path: agentic_tool_calling_sft.jsonl
-  - config_name: arete_values_sft
+${agyYamlBlock}  - config_name: arete_values_sft
     data_files:
       - split: train
         path: arete_values_sft.jsonl
@@ -331,19 +353,19 @@ configs:
 
 > **Trained Through [KruschStack](https://github.com/kruschdev/krusch-stack) to Benefit [KruschStack](https://github.com/kruschdev/krusch-stack)**
 >
-> Every trajectory and preference pair in this dataset (\`${totalRecords.toLocaleString('en-US')}\` total Zero-Leak records across 9 splits) was synthesized, AST-grounded, or quality-filtered and verified through **[KruschStack (\`krusch-stack\`)](https://github.com/kruschdev/krusch-stack)** — my Unified 7-Pillar, 39-Tool Model Context Protocol (MCP) & Agentic Coding Stack (\`npx krusch-stack init\`). It powers the **\`L1.5\` 8B Edge Agent**, **\`L2\` 30B Local MoE Student (\`Wave-7\`)**, **\`L2.2\` 31B Dense Reasoning Specialist**, and **\`L2.5\` 120B Burst Teacher** inside my **KruschStack Cognitive Cascade Router**.
+> Every trajectory and preference pair in this dataset (\`${totalRecords.toLocaleString('en-US')}\` total Zero-Leak records across ${splitTotal} splits) was synthesized, AST-grounded, or quality-filtered and verified through **[KruschStack (\`krusch-stack\` \`v1.2.0\`)](https://github.com/kruschdev/krusch-stack)**, my Unified 10-Pillar, 39-Tool Model Context Protocol (MCP) & Agentic Coding Stack (\`npx krusch-stack init\`). It powers the **\`L1.5\` 8B Edge Agent**, **\`L2\` 30B Local MoE Student (\`Wave-7\`)**, **\`L2.2\` 31B Dense Reasoning Specialist**, and **\`L2.5\` 120B Burst Teacher** inside my **KruschStack Cognitive Cascade Router**.
 
 ---
 
 ## 🔗 The KruschStack & Jean SRE Ecosystem
 
-- **🛠️ KruschStack (7-Pillar 39-Tool MCP Stack)**: [\`github.com/kruschdev/krusch-stack\`](https://github.com/kruschdev/krusch-stack) (\`npx krusch-stack init\`)
+- **🛠️ KruschStack (10-Pillar 39-Tool MCP Stack)**: [\`github.com/kruschdev/krusch-stack\`](https://github.com/kruschdev/krusch-stack) (\`npx krusch-stack init\`)
 - **🤖 Jean SRE by Kruschdev (24/7 Autonomous Auditor & Distillation Harness)**: [\`github.com/kruschdev/Jean-SRE-by-kruschdev\`](https://github.com/kruschdev/Jean-SRE-by-kruschdev)
 - **🥇 \`#1 Open-Weights\` 31B Dense QLoRA (\`L2.2\` Tier, \`57.33%\` DolphinBench)**: [\`krush420/gemma4-31b-sre-lora\`](https://huggingface.co/krush420/gemma4-31b-sre-lora) (for \`google/gemma-4-31b-it\`)
 - **🪶 8B Edge Agent & Referee LoRA (\`L1.5\` Local Tier)**: [\`krush420/llama3-hermes3-8b-sre-lora\`](https://huggingface.co/krush420/llama3-hermes3-8b-sre-lora) (Built with Meta Llama 3 for \`NousResearch/Hermes-3-Llama-3.1-8B\`)
-- **⚡ 30B Student QLoRA (\`L2\` Local MoE Tier, \`Wave-7\` \`125.8–131.5 tok/s\`)**: [\`krush420/qwen3-coder-30b-sre-lora\`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for \`Qwen/Qwen3-Coder-30B-A3B-Instruct\`)
+- **⚡ 30B Student QLoRA (\`L2\` Local MoE Tier, \`Wave-7\` \`125.8-131.5 tok/s\`)**: [\`krush420/qwen3-coder-30b-sre-lora\`](https://huggingface.co/krush420/qwen3-coder-30b-sre-lora) (for \`Qwen/Qwen3-Coder-30B-A3B-Instruct\`)
 - **🧠 120B Teacher QLoRA (\`L2.5\` Burst Tier)**: [\`krush420/gpt-oss-120b-sre-lora\`](https://huggingface.co/krush420/gpt-oss-120b-sre-lora) (for \`openai/gpt-oss-120b\`)
-- **🏆 Hermetic Benchmark Audit Logs (\`75/75\` Gates, \`48\` Raw JSON + \`1\` PR #169 Live Receipt Audit Logs across \`333,000+\` Queries/Traces, incl. \`27\` Official DolphinBench \`600\` Runs / \`16,200\` Traces)**: [\`krush420/sovereign-g4-benchmarks\`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [\`krush420/sovereign-router-arena\`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
+- **🏆 Hermetic Benchmark Audit Logs (\`95/95\` Gates, \`48\` Raw JSON + \`1\` PR #169 Live Receipt Audit Logs across \`335,000+\` Queries/Traces, incl. \`28\` Official DolphinBench \`600\` Runs / \`16,800\` Traces)**: [\`krush420/sovereign-g4-benchmarks\`](https://huggingface.co/datasets/krush420/sovereign-g4-benchmarks) · [\`krush420/sovereign-router-arena\`](https://huggingface.co/spaces/krush420/sovereign-router-arena)
 
 ---
 
@@ -354,7 +376,7 @@ configs:
 | \`default\` | \`argon_golden_remediations\` | \`argon_golden_remediations.jsonl\` | **${stats.argonCount}** | \`gemini-4-argon\` | **Test-Verified Code Patches & Unit Tests**: Pairs structured Master Audit Backlog cards (\`BUG-*\`, \`SEC-*\`, \`ARCH-*\`, \`TEST-*\`) with complete, unit-test-verified source file patches (\`npm test\` / \`pytest\`, exit code \`0\`) across JavaScript/ESM, TypeScript, React, and Python 3.12 repositories. |
 | \`default\` | \`lego_and_referee_calibration_sft\` | \`lego_and_referee_calibration_sft.jsonl\` | **${stats.legoCalibrationCount}** | \`gemini-4-argon\` | **Calibrated \`CLEAN_PASS\`, P0/P1 Remediations, Lego-First & Rule-of-3 Scout Idioms**: Live-source \`CLEAN_PASS\` Referee convergence verdicts (\`findings: []\`), ground-truth security/concurrency bug remediations, zero-boilerplate \`@krusch/toolkit\` v1.8 / \`krusch_toolkit\` v1.6 synthesis, and cross-repository Rule-of-3 \`lego_scout\` triage. |
 | \`agentic_tool_calling_sft\` | \`train\` | \`agentic_tool_calling_sft.jsonl\` | **${stats.agenticSftCount}** | \`gemini-4-argon\` | **Unified Multi-Turn SRE & Workspace Function-Calling SFT**: Structured \`tools\` + \`assistant.tool_calls\` + \`role: "tool"\` trajectories across 3-Tier MCP code audits/2PC staging and generalist workspace operations (partial-briefing gap search, temporal supersession, standing constraints, side-effect execution). |
-| \`arete_values_sft\` | \`train\` | \`arete_values_sft.jsonl\` | **${stats.areteSftCount}** | [\`NousResearch/arete-data-pairs\`](https://huggingface.co/datasets/NousResearch/arete-data-pairs) (\`Apache-2.0\`) | **Curated Zero-Defect Statutory & Analytical Non-Refusal SFT (\`20\` per category across 7 categories)**: Strictly filtered from \`34,878\` raw rows requiring \`in_sft_accepted=true\`, \`accuracy=5\`, \`independence=5\`, \`helpfulness>=4\`, \`balance>=4\`, \`language>=4\`, and \`0\` issue tags (\`reasons=[]\`). |
+${agyTableRow}| \`arete_values_sft\` | \`train\` | \`arete_values_sft.jsonl\` | **${stats.areteSftCount}** | [\`NousResearch/arete-data-pairs\`](https://huggingface.co/datasets/NousResearch/arete-data-pairs) (\`Apache-2.0\`) | **Curated Zero-Defect Statutory & Analytical Non-Refusal SFT (\`20\` per category across 7 categories)**: Strictly filtered from \`34,878\` raw rows requiring \`in_sft_accepted=true\`, \`accuracy=5\`, \`independence=5\`, \`helpfulness>=4\`, \`balance>=4\`, \`language>=4\`, and \`0\` issue tags (\`reasons=[]\`). |
 | \`default\` | \`elitist_120b_teacher\` | \`elitist_120b_teacher.jsonl\` | **${stats.elitistCount}** | \`gpt-oss:120b\` + \`gemini-4-argon\` | **Curated High-Signal QLoRA Training Split**: Rejection-sampled trajectories requiring verbatim \`file:line\` grounding, concrete code blocks/diffs, calibrated \`CLEAN_PASS\` verdicts, Lego-First / Lego-Scout idioms, and 2x-oversampled Golden Remediations. |
 | \`default\` | \`code_audit_11phase_sft\` | \`code_audit_11phase_sft.jsonl\` | **${stats.codeAuditCount}** | \`gpt-oss:120b\` | **Full 11-Phase Code Audit Corpus**: Complete phase-by-phase codebase investigations (\`0_ORIENTATION\` through \`2_MASTER_BACKLOG\`) using AST symbol search (\`search_symbols\`, \`dependency_graph\`), bounded file reads (\`read_file path:start-end\`), and live test verification. |
 | \`referee_calibration_dpo\` | \`train\` | \`referee_calibration_dpo.jsonl\` | **${stats.dpoCount}** | \`gemini-4-argon\` + \`gpt-oss-sre:120b\` | **Balanced Referee & Architecture DPO Preference Pairs (\`trl.DPOTrainer\`)**: Precision pairs, Recall pairs, and Architecture Calibration pairs. |
@@ -459,6 +481,7 @@ function main() {
         argonCount: argonRes.total,
         legoCalibrationCount: legoCalRes.total,
         agenticSftCount: agenticSftRes.total,
+        agySftCount: agySftRes.total,
         areteSftCount,
         dpoCount: dpoRes.total,
         agenticDpoCount: agenticDpoRes.total,

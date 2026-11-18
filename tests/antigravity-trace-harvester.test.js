@@ -12,10 +12,11 @@ import {
 import { verifyZeroLeaks } from '../scripts/build_public_sft_release.js';
 
 describe('Antigravity Zero-Leak Trajectory Harvester (harvest_antigravity_traces.js)', () => {
-  test('scrubAntigravityTraceText removes home paths, private/CGNAT IPs, fleet hostnames, and Bearer tokens', () => {
+  test('scrubAntigravityTraceText removes home paths, private/CGNAT IPs, fleet hostnames, private repo names, and Bearer tokens', () => {
     const dirty = [
       'File Path: file:///home/krusch/.gemini/antigravity/brain/abc/.system_generated/logs/transcript.jsonl',
       'Edited /home/krusch/homelab/projects/krusch-stack/bin/krusch-stack.js on kruschdev (192.168.1.240 / 100.106.193.66)',
+      'Private repos: acme-legacy-billing, oscar-tree-service, legacy-billing-monolith, hermes-parallax',
       'Authorization: Bearer super_secret_bearer_token_123456'
     ].join('\n');
 
@@ -24,6 +25,10 @@ describe('Antigravity Zero-Leak Trajectory Harvester (harvest_antigravity_traces
     assert.equal(clean.includes('192.168.'), false);
     assert.equal(clean.includes('100.106.'), false);
     assert.equal(clean.includes('kruschdev'), false);
+    assert.equal(clean.includes('acme-legacy-billing'), false);
+    assert.equal(clean.includes('oscar-tree-service'), false);
+    assert.equal(clean.includes('legacy-billing-monolith'), false);
+    assert.equal(clean.includes('hermes-parallax'), false);
     assert.equal(clean.includes('super_secret_bearer_token_123456'), false);
     assert.ok(clean.includes('Bearer REDACTED_TOKEN'));
   });

@@ -1253,8 +1253,20 @@ export function buildLegoScoutSynthesisRows(nowIso) {
         elitist_score: 97,
         messages: [
             { role: 'system', content: r.system },
-            { role: 'user', content: normalizePortableSftText(r.prompt, 'toolkit') },
-            { role: 'assistant', content: normalizePortableSftText(r.answer, 'toolkit') }
+            {
+                role: 'user',
+                content: normalizePortableSftText(r.prompt, 'toolkit').replace(
+                    /\b(?:acme-legacy-billing|legacy-billing-monolith|oscar-tree-service|hermes-parallax)\b/gi,
+                    'internal-monolith'
+                )
+            },
+            {
+                role: 'assistant',
+                content: normalizePortableSftText(r.answer, 'toolkit').replace(
+                    /\b(?:acme-legacy-billing|legacy-billing-monolith|oscar-tree-service|hermes-parallax)\b/gi,
+                    'internal-monolith'
+                )
+            }
         ]
     }));
 }

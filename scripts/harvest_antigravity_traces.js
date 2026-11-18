@@ -31,6 +31,34 @@ export const ANTIGRAVITY_TRACES_SFT_PATH = path.join(
   'distillation',
   'antigravity_traces_sft.jsonl'
 );
+export const ANTIGRAVITY_TRACES_LOCAL_ONLY_PATH = path.join(
+  projectRoot,
+  'data',
+  'distillation',
+  'antigravity_traces_sft_local.jsonl'
+);
+
+export const PUBLIC_OSS_PROJECTS = new Set([
+  'krusch-stack',
+  'toolkit',
+  'krusch-context-mcp',
+  'krusch-git',
+  'krusch-fs',
+  'krusch-fs-mcp',
+  'krusch-coding-harness',
+  'grounded-harness',
+  'krusch-grounded-harness',
+  'hydrascope',
+  'deadbolt',
+  'krusch-cascade-router',
+  'krusch-frontend-mcp',
+  'g-krusch',
+  'jean-sre',
+  'easi.run'
+]);
+
+const PRIVATE_REPO_REDACT_RE =
+  /\b(?:acme-legacy-billing|legacy-billing-monolith|oscar-tree-service|caren|pocket-lawyer|home-ai|first-things-first|berean|spark|krusch-law|krusch-bizlaw|krusch-biz|krusch-companion-skylight-connector|krusch-companion|krusch-nexus|krusch-pre-router|card-game-context|orbit-wars|hermes-parallax|Brain3|dbos-worker)\b/gi;
 
 const INTERNAL_ORCHESTRATION_TOOLS = new Set([
   'send_message',
@@ -83,8 +111,9 @@ export function scrubAntigravityTraceText(rawText, project = 'workspace') {
     .replace(/\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/g, '127.0.0.1')
     .replace(/\b172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b/g, '127.0.0.1')
     .replace(/\b(?:192\.168|10\.\d{1,3})\.\d{1,3}\.\d{1,3}\b/g, '127.0.0.1')
-    // Catch additional fleet hostnames & private suffixes
-    .replace(/\b(?:kruschdev|kruschserv|kruschmedia|kruschgame|kruschsandbox|kr1yoga|krmac|crush0)\b/gi, 'compute-node')
+    // Catch additional fleet hostnames, private repos & private suffixes
+    .replace(/\b(?:kruschdev|kruschserv|kruschmedia|kruschgame|kruschsandbox|kr1yoga|krmac|crush0|robin)\b/gi, 'compute-node')
+    .replace(PRIVATE_REPO_REDACT_RE, 'internal-app')
     .replace(/\.(?:lan|ts\.net)\b/gi, '.example')
     // Redact Bearer tokens & API keys
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]{12,}/gi, 'Bearer REDACTED_TOKEN')
@@ -261,7 +290,10 @@ export function parseAntigravityTranscriptToSftRow(transcriptPath, conversationI
 
       const outText = outputs[k] || 'OK';
       if (tc.name === 'edit_file' || tc.name === 'write_file') {
-        hadEdits = true;
+        const editedPath = String(tc.args?.Path || tc.args?.TargetFile || '');
+        if (/\.(?:js|mjs|cjs|ts|tsx|jsx|py|rs|go|sql|yml|yaml)$|Dockerfile$/i.test(editedPath)) {
+          hadEdits = true;
+        }
       }
       if (
         tc.name === 'run_command' &&
@@ -402,10 +434,13 @@ function loadExistingRowsById(sftOutPath) {
  */
 export function harvestAntigravityTraces({
   brainDir = DEFAULT_BRAIN_DIR,
-  sftOutPath = ANTIGRAVITY_TRACES_SFT_PATH
+  sftOutPath = ANTIGRAVITY_TRACES_SFT_PATH,
+  localOutPath = sftOutPath === ANTIGRAVITY_TRACES_SFT_PATH ? ANTIGRAVITY_TRACES_LOCAL_ONLY_PATH : null,
+  requirePublicOss = true
 } = {}) {
   fs.mkdirSync(path.dirname(sftOutPath), { recursive: true });
   const rowsById = loadExistingRowsById(sftOutPath);
+  const localRowsById = localOutPath ? loadExistingRowsById(localOutPath) : new Map();
   let scannedConversations = 0;
   let newlyHarvested = 0;
 
@@ -424,20 +459,34 @@ export function harvestAntigravityTraces({
       scannedConversations += 1;
       const row = parseAntigravityTranscriptToSftRow(transcriptPath, entry.name);
       if (row) {
-        if (!rowsById.has(row.id)) newlyHarvested += 1;
-        rowsById.set(row.id, row);
+        if (localOutPath) {
+          localRowsById.set(row.id, row);
+        }
+        if (!requirePublicOss || PUBLIC_OSS_PROJECTS.has(row.project)) {
+          if (!rowsById.has(row.id)) newlyHarvested += 1;
+          rowsById.set(row.id, row);
+        }
       }
     }
   }
 
-  const allRows = [...rowsById.values()];
+  const allRows = [...rowsById.values()].filter(
+    (r) => !requirePublicOss || PUBLIC_OSS_PROJECTS.has(r.project)
+  );
   const payload = allRows.length > 0 ? `${allRows.map((r) => JSON.stringify(r)).join('\n')}\n` : '';
   fs.writeFileSync(sftOutPath, payload, 'utf8');
+
+  if (localOutPath && localRowsById.size > 0) {
+    fs.mkdirSync(path.dirname(localOutPath), { recursive: true });
+    const localPayload = `${[...localRowsById.values()].map((r) => JSON.stringify(r)).join('\n')}\n`;
+    fs.writeFileSync(localOutPath, localPayload, 'utf8');
+  }
 
   return {
     scannedConversations,
     newlyHarvested,
     totalRows: allRows.length,
+    localTotalRows: localRowsById.size,
     outputPath: sftOutPath
   };
 }
