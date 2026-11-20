@@ -141,6 +141,58 @@ describe('Jean SRE In-Memory Fallback Cache & Eviction (ARCH-01 / TEST-01)', () 
             assert.strictEqual(audit.data.clean, true, `${rel}: ${JSON.stringify(audit.data.findings)}`);
         }
     });
+
+    test('applyCallerModelId authoritatively stamps active worker model_id on schema-compatible tools unless allowModelOverride is set', async () => {
+        const { applyCallerModelId } = await import('../src/mcp-client.js');
+        const schemaWithModel = { inputSchema: { properties: { query: { type: 'string' }, model_id: { type: 'string' } } } };
+        const schemaWithoutModel = { inputSchema: { properties: { query: { type: 'string' } } } };
+
+        const injected = applyCallerModelId(schemaWithModel, { query: 'OrderProcessor' }, { modelId: 'gemma4:e4b' });
+        assert.strictEqual(injected.model_id, 'gemma4:e4b');
+
+        const overriddenHallucination = applyCallerModelId(
+            schemaWithModel,
+            { query: 'OrderProcessor', model_id: 'qwen3-coder-30b-moe:latest' },
+            { modelId: 'qwen2.5-coder:7b' }
+        );
+        assert.strictEqual(overriddenHallucination.model_id, 'qwen2.5-coder:7b');
+
+        const explicitAllowed = applyCallerModelId(
+            schemaWithModel,
+            { query: 'OrderProcessor', model_id: 'hermes3:latest' },
+            { modelId: 'gemma4:e4b', allowModelOverride: true }
+        );
+        assert.strictEqual(explicitAllowed.model_id, 'hermes3:latest');
+
+        const untouched = applyCallerModelId(schemaWithoutModel, { query: 'OrderProcessor' }, { modelId: 'gemma4:e4b' });
+        assert.strictEqual(untouched.model_id, undefined);
+    });
+
+    test('loadLocalSweepExtension returns null when missing and loads optional gitignored sidecar module cleanly', async () => {
+        const fsMod = await import('node:fs');
+        const osMod = await import('node:os');
+        const pathMod = await import('node:path');
+        const { loadLocalSweepExtension } = await import('../src/jean_sre_sweep.js');
+
+        const missing = await loadLocalSweepExtension('/tmp/nonexistent-local-sweep-ext-99999.mjs');
+        assert.strictEqual(missing, null);
+
+        const tmpDir = fsMod.mkdtempSync(pathMod.join(osMod.tmpdir(), 'jean-sweep-ext-'));
+        const extFile = pathMod.join(tmpDir, 'ext.mjs');
+        fsMod.writeFileSync(
+            extFile,
+            'export async function beforeThinker({ targetProject, phase }) { return `ext:${targetProject}:${phase}`; }\n',
+            'utf8'
+        );
+        try {
+            const loaded = await loadLocalSweepExtension(extFile);
+            assert.strictEqual(typeof loaded.beforeThinker, 'function');
+            const out = await loaded.beforeThinker({ targetProject: 'demo', phase: '0_ORIENTATION' });
+            assert.strictEqual(out, 'ext:demo:0_ORIENTATION');
+        } finally {
+            fsMod.rmSync(tmpDir, { recursive: true, force: true });
+        }
+    });
 });
 
 

@@ -854,7 +854,7 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
                     resultText = `Escalation approved. The 30B architect will now take over. Stop generating and let Phase 2 run.`;
                 } else {
                     try {
-                        resultText = await callMcpTool(fnName, fnArgs);
+                        resultText = await callMcpTool(fnName, fnArgs, { modelId: EXECUTOR_MODEL });
                     } catch (e) {
                         resultText = `Tool execution failed: ${e.message}`;
                     }
@@ -1052,7 +1052,7 @@ if (isMainModule) {
         // Used by jean_sre_sweep.js to programmatically load context (Ralph loop pattern).
         app.post('/tool', requireJeanAuth, async (req, res) => {
             try {
-                const { name, args } = req.body;
+                const { name, args, modelId } = req.body;
                 if (!name) {
                     return res.status(400).json({ error: 'name is required' });
                 }
@@ -1061,7 +1061,7 @@ if (isMainModule) {
                     console.warn(`[Compliance Gate] 🛑 /tool call ${name} blocked: ${complianceResult.reason}`);
                     return res.status(403).json({ error: `[COMPLIANCE VIOLATION]: ${complianceResult.reason}` });
                 }
-                const result = await callMcpTool(name, args || {});
+                const result = await callMcpTool(name, args || {}, { modelId: modelId || PERSONA_MODEL });
                 res.json({ result });
             } catch (error) {
                 console.error('Tool call error:', error.message);

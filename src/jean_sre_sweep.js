@@ -7,7 +7,7 @@ import { resolveModelConfig } from '@krusch/toolkit/llm';
 import { scoutHomelabLegoCandidates } from '@krusch/toolkit/lego-scout';
 import { auditBoilerplateText } from '@krusch/toolkit/catalog';
 import { stageScoutCandidateSpecs, auditRepoBrickLocks } from '@krusch/toolkit/brick-exchange';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join, extname, basename } from 'path';
 import os from 'os';
 import { extractSymbolsAndImports } from './ast-chunker.js';
@@ -449,7 +449,11 @@ async function callTool(name, args = {}, options = {}) {
                     'Content-Type': 'application/json',
                     ...(process.env.JEAN_API_KEY ? { 'x-api-key': process.env.JEAN_API_KEY } : {})
                 },
-                body: JSON.stringify({ name, args }),
+                body: JSON.stringify({
+                    name,
+                    args,
+                    ...(options.modelId ? { modelId: options.modelId } : {})
+                }),
                 signal: controller.signal
             });
             clearTimeout(timeout);
@@ -467,6 +471,25 @@ async function callTool(name, args = {}, options = {}) {
             }
             return `[Failed: ${e.message}]`;
         }
+    }
+}
+
+let _cachedSweepExt = undefined;
+async function loadLocalSweepExtension(customPath = null) {
+    if (!customPath && _cachedSweepExt !== undefined) return _cachedSweepExt;
+    const extPath = customPath || process.env.LOCAL_SWEEP_EXTENSION_FILE || join(projectRoot, '.agent', 'local-sweep-extension.mjs');
+    if (!fs.existsSync(extPath)) {
+        if (!customPath) _cachedSweepExt = null;
+        return null;
+    }
+    try {
+        const mod = await import(pathToFileURL(extPath).href);
+        if (!customPath) _cachedSweepExt = mod;
+        return mod;
+    } catch (e) {
+        console.warn(`[Sweep] Local extension failed to load: ${e.message}`);
+        if (!customPath) _cachedSweepExt = null;
+        return null;
     }
 }
 
@@ -4015,7 +4038,26 @@ function getPhaseScopedChecklist(fullText, phase) {
 
             const groundTruthVerification = buildPendingIssueCodeEvidence(inflight.block, projectPath, phase);
             const projectAuditContext = buildProjectAuditContext(projectPath, phase, inflight.block, { isColabBurst: colabStatus.active });
-            const enrichedCycleContext = [cycleContext, projectAuditContext].filter(Boolean).join('\n\n');
+            let localExtContext = '';
+            const localSweepExt = await loadLocalSweepExtension();
+            if (localSweepExt && typeof localSweepExt.beforeThinker === 'function') {
+                try {
+                    localExtContext = (await localSweepExt.beforeThinker({
+                        cycle,
+                        targetProject,
+                        projectPath,
+                        phase,
+                        inflightBlock: inflight.block,
+                        isColabBurst: colabStatus.active,
+                        thinkerModel: THINKER_MODEL,
+                        workerModel: WORKER_MODEL,
+                        callTool
+                    })) || '';
+                } catch (extErr) {
+                    console.warn(`[Sweep] Local beforeThinker hook error: ${extErr.message}`);
+                }
+            }
+            const enrichedCycleContext = [cycleContext, projectAuditContext, localExtContext].filter(Boolean).join('\n\n');
 
             const thinkerPrompt = buildThinkerPrompt(enrichedCycleContext, inflight.block, inflight.goal, workflow, driftWarning, targetProject, projectPath, phase, phaseNum, totalPhases, sessionInputDocument);
             const thinkerReply = await sendToAgent(thinkerPrompt, { noTools: true });
@@ -4127,6 +4169,26 @@ function getPhaseScopedChecklist(fullText, phase) {
                 extraToolCommands: dispatched.map(d => d.command).filter(Boolean)
             });
 
+            if (localSweepExt && typeof localSweepExt.afterImplementer === 'function') {
+                try {
+                    await localSweepExt.afterImplementer({
+                        cycle,
+                        targetProject,
+                        projectPath,
+                        phase,
+                        isSynthesisPhase,
+                        checkpointText: finalCheckpointText,
+                        isCleanPass: isSynthesisPhase ? isCleanPassBacklog(finalCheckpointText) : false,
+                        cards: isSynthesisPhase ? parseMasterBacklogCards(finalCheckpointText) : [],
+                        thinkerModel: THINKER_MODEL,
+                        workerModel: WORKER_MODEL,
+                        callTool
+                    });
+                } catch (extErr) {
+                    console.warn(`[Sweep] Local afterImplementer hook error: ${extErr.message}`);
+                }
+            }
+
             // Persist from the finalized checkpoint output (clears stale Pending Issues on CLEAN_PASS)
             await persistInflight(finalCheckpointText, cycle, targetProject, { phase });
             await extractAndSaveLessons(implementerReply, targetProject);
@@ -4236,6 +4298,7 @@ export {
     computeProjectSourceSignature,
     markProjectConverged,
     isProjectConverged,
+    loadLocalSweepExtension,
     shutdownController
 };
 

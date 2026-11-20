@@ -80,7 +80,8 @@ class McpClientManager {
     return allTools;
   }
 
-  async callTool(fullToolName, args) {
+  async callTool(fullToolName, rawArgs, callerContext = {}) {
+    let args = (rawArgs && typeof rawArgs === 'object') ? { ...rawArgs } : {};
     // Intercept homelab-memory or krusch-memory search/add calls and map them to krusch-context-mcp
     const searchAliases = [
       'mcp_homelab-memory_search',
@@ -202,6 +203,9 @@ class McpClientManager {
         args.value = args.content;
       }
     }
+
+    // Auto-inject active worker model_id on schema-compatible tools when omitted by small LLMs
+    applyCallerModelId(originalTool, args, callerContext);
 
     const result = await client.callTool({
       name: toolName,
@@ -370,7 +374,42 @@ async function _doInitMcpClients() {
       console.error(`[MCP] Krusch Frontend failed to connect: ${e.message}`);
     }
 
+    // 7. Optional Gitignored Local Sidecar MCP Extensions (data/local-mcp-servers.json)
+    const localExtFile = process.env.LOCAL_MCP_SERVERS_FILE || path.resolve(appRoot, 'data/local-mcp-servers.json');
+    if (fs.existsSync(localExtFile)) {
+      try {
+        const rawExt = JSON.parse(fs.readFileSync(localExtFile, 'utf8'));
+        const extServers = (rawExt && typeof rawExt.mcpServers === 'object' && rawExt.mcpServers) || {};
+        for (const [srvName, srvCfg] of Object.entries(extServers)) {
+          if (!srvCfg || srvCfg.disabled || typeof srvCfg.command !== 'string') continue;
+          const srvArgs = Array.isArray(srvCfg.args) ? srvCfg.args : [];
+          const srvEnv = (srvCfg.env && typeof srvCfg.env === 'object') ? srvCfg.env : {};
+          try {
+            await mcpManager.connect(srvName, srvCfg.command, srvArgs, srvEnv, srvCfg.cwd || appRoot);
+          } catch (srvErr) {
+            console.error(`[MCP] Local sidecar '${srvName}' failed to connect: ${srvErr.message}`);
+          }
+        }
+      } catch (e) {
+        console.error(`[MCP] Local sidecar extension load failed: ${e.message}`);
+      }
+    }
+
     return mcpManager;
+}
+
+export function applyCallerModelId(toolDef, args, callerContext = {}) {
+    if (!args || typeof args !== 'object') return args;
+    const callerModel = typeof callerContext?.modelId === 'string' ? callerContext.modelId.trim() : '';
+    if (!callerModel) return args;
+    const props = toolDef?.inputSchema?.properties;
+    if (props && Object.prototype.hasOwnProperty.call(props, 'model_id')) {
+        if (callerContext?.allowModelOverride === true && args.model_id && String(args.model_id).trim() !== '') {
+            return args;
+        }
+        args.model_id = callerModel;
+    }
+    return args;
 }
 
 export async function getMcpTools() {
@@ -378,9 +417,9 @@ export async function getMcpTools() {
     return mcpManager.getAllTools();
 }
 
-export async function callMcpTool(name, args) {
+export async function callMcpTool(name, args, callerContext = {}) {
     await initMcpClients();
-    return await mcpManager.callTool(name, args);
+    return await mcpManager.callTool(name, args, callerContext);
 }
 
 export function getConnectedServers() {
