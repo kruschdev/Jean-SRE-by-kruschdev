@@ -466,7 +466,7 @@ async function callTool(name, args = {}, options = {}) {
             clearTimeout(timeout);
             console.error(`[Tool] ${name} failed (attempt ${attempt + 1}): ${e.message}`);
             if (attempt < maxRetries) {
-                await sleep(5000);
+                await sleep(options.retryDelayMs ?? 5000);
                 continue;
             }
             return `[Failed: ${e.message}]`;
@@ -2902,6 +2902,7 @@ async function appendLegoScoutBacklogEntry(cleanupPath, infraTarget, reply, nowI
 
 function buildProjectAuditContext(projectPath, phase, inflightBlock = '', options = {}) {
     const isColabBurst = Boolean(options.isColabBurst);
+    const hasFoldedSpanContext = Boolean(options.hasFoldedSpanContext);
     const sections = [];
     const files = listProjectFiles(projectPath);
     if (files.length > 0) {
@@ -2986,7 +2987,8 @@ function buildProjectAuditContext(projectPath, phase, inflightBlock = '', option
     // Place Live Source Verification AFTER Accumulated Checkpoints so Ground Truth overrides any prior summary
     const pendingEvidence = buildPendingIssueCodeEvidence(inflightBlock, projectPath, phase);
     if (pendingEvidence) {
-        sections.push(`**🔍 Live Source Verification for Mentioned Symbols/Files in Inflight (GROUND TRUTH — overrides any prior summary):**\n${pendingEvidence.slice(0, isColabBurst ? 8500 : 6500)}`);
+        const evidenceCap = isColabBurst ? 8500 : (hasFoldedSpanContext ? 2200 : 6500);
+        sections.push(`**🔍 Live Source Verification for Mentioned Symbols/Files in Inflight (GROUND TRUTH — overrides any prior summary):**\n${pendingEvidence.slice(0, evidenceCap)}`);
     }
 
     return sections.join('\n\n');
@@ -4037,7 +4039,6 @@ function getPhaseScopedChecklist(fullText, phase) {
             }
 
             const groundTruthVerification = buildPendingIssueCodeEvidence(inflight.block, projectPath, phase);
-            const projectAuditContext = buildProjectAuditContext(projectPath, phase, inflight.block, { isColabBurst: colabStatus.active });
             let localExtContext = '';
             const localSweepExt = await loadLocalSweepExtension();
             if (localSweepExt && typeof localSweepExt.beforeThinker === 'function') {
@@ -4057,6 +4058,10 @@ function getPhaseScopedChecklist(fullText, phase) {
                     console.warn(`[Sweep] Local beforeThinker hook error: ${extErr.message}`);
                 }
             }
+            const projectAuditContext = buildProjectAuditContext(projectPath, phase, inflight.block, {
+                isColabBurst: colabStatus.active,
+                hasFoldedSpanContext: localExtContext.length > 200
+            });
             const enrichedCycleContext = [cycleContext, projectAuditContext, localExtContext].filter(Boolean).join('\n\n');
 
             const thinkerPrompt = buildThinkerPrompt(enrichedCycleContext, inflight.block, inflight.goal, workflow, driftWarning, targetProject, projectPath, phase, phaseNum, totalPhases, sessionInputDocument);

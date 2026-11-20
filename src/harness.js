@@ -1192,7 +1192,7 @@ if (isMainModule) {
         });
 
         const port = process.env.PORT || 3000;
-        app.listen(port, async () => {
+        const server = app.listen(port, async () => {
             console.log(`Personal Agent harness running on port ${port}`);
             console.log(`[Config] Persona (Thinker): ${PERSONA_MODEL} @ ${PERSONA_OLLAMA_URL}`);
             console.log(`[Config] Colab G4 Piggyback Candidates: ${COLAB_BURST_URLS.join(', ')} (${COLAB_BURST_MODEL})`);
@@ -1205,5 +1205,7 @@ if (isMainModule) {
                 console.error(`Failed to initialize MCP clients:`, e);
             }
         });
+        server.keepAliveTimeout = 65_000;
+        server.headersTimeout = 66_000;
     }
 }
