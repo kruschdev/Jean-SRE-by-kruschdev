@@ -16,6 +16,7 @@ import {
     analyzeJeanSweepLogHealth,
     runJeanModularRsiPass,
     runDailyJeanOptimization,
+    buildSafeSourceSyncArgs,
 } from '../scripts/optimize_jean_daily.js';
 
 test('computeJeanTurnDifficulty maps 11-phase sweep & interactive prompts across Easy/Medium/Hard 3-Chair bands', () => {
@@ -232,4 +233,19 @@ test('Daily Jean SRE Optimizer evaluates 3rd-Chair VRAM residency, ModularRSI SI
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+
+    // 4. Safe source-sync builder enforces mandatory DB/secret exclusions and rejects unsafe paths
+    const rsyncArgs = buildSafeSourceSyncArgs({
+        srcDir: 'projects/krusch-companion',
+        destSpec: 'remote-node:/opt/workspace',
+        dryRun: true,
+    });
+    assert.equal(rsyncArgs.includes('--delete'), false);
+    assert.ok(rsyncArgs.includes('--exclude=postgres/'));
+    assert.ok(rsyncArgs.includes('--exclude=redis/'));
+    assert.ok(rsyncArgs.includes('--exclude=data/'));
+    assert.ok(rsyncArgs.includes('--exclude=.agent/'));
+    assert.ok(rsyncArgs.includes('--exclude=.env*'));
+    assert.throws(() => buildSafeSourceSyncArgs({ srcDir: '../etc', destSpec: 'x:/y' }), /Unsafe/);
+    assert.throws(() => buildSafeSourceSyncArgs({ srcDir: 'benchmarks/locomo', destSpec: 'x:/y' }), /Unsafe/);
 });

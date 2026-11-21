@@ -2,7 +2,8 @@
 
 /**
  * @file optimize_jean_daily.js
- * @description Daily 7-Stage Closed-Loop Optimization & Continual Self-Improvement Engine for Jean SRE:
+ * @description Daily 8-Stage Closed-Loop Optimization & Continual Self-Improvement Engine for Jean SRE:
+ *   0. Non-Destructive Cross-Node Source-Parity Sync (`JEAN_SOURCE_SYNC_TARGETS` via safe `rsync` exclusions)
  *   1. 3-Chair All-VRAM Residency & Context Pinning (`gemma4:e2b`, `qwen3-coder-30b-moe`, `inkling-2-mini`, `snowflake-arctic-embed2`)
  *   2. Live Fleet Quantcheck & Behavioral Canary Gate (`/quantcheck`)
  *   3. SQLite `context.db` Deduplication, Embedding-Blob Compaction & Rotated Audit Log Archival
@@ -44,6 +45,89 @@ const DEFAULT_SKILL_PATH = path.join(JEAN_PROJECT_ROOT, 'skills', 'jean-mcp-code
 const THERMAL_LIMIT_C = 85;
 const EMBED_CONTEXT_LENGTH = 8192;
 const THIRD_CHAIR_CONTEXT_LENGTH = 16384;
+
+export const SAFE_SOURCE_SYNC_EXCLUDES = Object.freeze([
+    '.git',
+    'node_modules',
+    '.venv',
+    'venv',
+    '__pycache__',
+    '.pytest_cache',
+    'dist',
+    'build',
+    '.next',
+    '.env*',
+    '.credentials*',
+    'postgres/',
+    'redis/',
+    'data/',
+    '.agent/',
+    '.store/',
+    '.krusch-stack/',
+    '*.db*',
+    '*.sqlite*',
+    '*.gguf',
+    '*.safetensors',
+    '*.bin',
+    'models/',
+    'JEAN_*',
+    'jean_*_log*.md',
+    '*INFLIGHT*.md',
+]);
+
+/**
+ * Build non-destructive `rsync` arguments (never `--delete`) enforcing strict exclusions
+ * for databases, credentials, runtime caches, and build artifacts.
+ */
+export function buildSafeSourceSyncArgs({ srcDir, destSpec, dryRun = false }) {
+    const cleanRel = String(srcDir || '').replace(/^\/+|\/+$/g, '');
+    if (!cleanRel || cleanRel.includes('..') || /^benchmarks\b/i.test(cleanRel)) {
+        throw new Error(`Unsafe or excluded source sync relative path: "${srcDir}"`);
+    }
+    const args = ['-az'];
+    if (dryRun) args.push('--dry-run');
+    for (const ex of SAFE_SOURCE_SYNC_EXCLUDES) {
+        args.push(`--exclude=${ex}`);
+    }
+    args.push(`${path.join(WORKSPACE_ROOT, cleanRel)}/`, `${destSpec.replace(/\/+$/, '')}/${cleanRel}/`);
+    return args;
+}
+
+async function stageWorkspaceSourceParity({ dryRun, env }) {
+    const primaryHost = env.JEAN_PRIMARY_HOST || '';
+    const remoteWorkspaceRoot = env.JEAN_REMOTE_WORKSPACE_ROOT || '';
+    const rawTargets = String(env.JEAN_SOURCE_SYNC_TARGETS || '').trim();
+    if (!primaryHost || primaryHost === 'local' || !remoteWorkspaceRoot || !rawTargets) {
+        return { ok: true, skipped: true, syncedTargets: 0, targets: [] };
+    }
+
+    const targets = rawTargets
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    const synced = [];
+    for (const rel of targets) {
+        const localAbs = path.join(WORKSPACE_ROOT, rel);
+        if (!fs.existsSync(localAbs) || !fs.statSync(localAbs).isDirectory()) continue;
+        if (!dryRun) {
+            await runHostCommand(primaryHost, `mkdir -p ${JSON.stringify(path.join(remoteWorkspaceRoot, rel))}`, 10_000);
+        }
+        const rsyncArgs = buildSafeSourceSyncArgs({
+            srcDir: rel,
+            destSpec: `${primaryHost}:${remoteWorkspaceRoot}`,
+            dryRun,
+        });
+        await execFileAsync('rsync', rsyncArgs, { timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
+        synced.push(rel);
+    }
+
+    return {
+        ok: true,
+        dryRun,
+        syncedTargets: synced.length,
+        targets: synced,
+    };
+}
 
 function loadDotEnvIfPresent(envPath) {
     if (!fs.existsSync(envPath)) return {};
@@ -743,7 +827,7 @@ function validateSkillMarkdownIntegrity(markdownText = '') {
 }
 
 /**
- * Execute all 7 daily optimization stages end-to-end (supports `dryRun` and DI overrides for tests).
+ * Execute all 8 daily optimization stages end-to-end (supports `dryRun` and DI overrides for tests).
  */
 export async function runDailyJeanOptimization(options = {}) {
     const dryRun = Boolean(options.dryRun);
@@ -759,6 +843,10 @@ export async function runDailyJeanOptimization(options = {}) {
 
     const startedAtMs = Date.now();
     const stages = {};
+
+    stages.sourceSync = options.mockStages?.sourceSync
+        ? await options.mockStages.sourceSync()
+        : await stageWorkspaceSourceParity({ dryRun, env });
 
     stages.residency = options.mockStages?.residency
         ? await options.mockStages.residency()
@@ -962,7 +1050,7 @@ export async function runDailyJeanOptimization(options = {}) {
     const durationSec = Number(((Date.now() - startedAtMs) / 1000).toFixed(2));
     const allStagesOk = Object.values(stages).every((s) => s && s.ok !== false);
 
-    const summaryText = `Jean SRE daily optimization ${allStagesOk ? 'PASSED' : 'DEGRADED'} in ${durationSec}s: 3-Chair residency verified, quantcheck=${stages.quantcheck.totalLiveProbed ?? 'skipped'} live models, context.db reclaimed ${stages.contextCompaction.reclaimedMb ?? 0}MB (now ${stages.contextCompaction.sizeAfterMb ?? 0}MB), SIM problems=${stages.modularRsi.simSummary.problemCount}.`;
+    const summaryText = `Jean SRE daily optimization ${allStagesOk ? 'PASSED' : 'DEGRADED'} in ${durationSec}s: sourceSync=${stages.sourceSync?.syncedTargets ?? 0} targets, 3-Chair residency verified, quantcheck=${stages.quantcheck.totalLiveProbed ?? 'skipped'} live models, context.db reclaimed ${stages.contextCompaction.reclaimedMb ?? 0}MB (now ${stages.contextCompaction.sizeAfterMb ?? 0}MB), SIM problems=${stages.modularRsi.simSummary.problemCount}.`;
 
     if (!dryRun && pgHandle) {
         try {
@@ -1008,6 +1096,7 @@ export async function runDailyJeanOptimization(options = {}) {
             timestamp: signedReceipt.generatedAt,
             allStagesOk,
             durationSec,
+            syncedTargets: stages.sourceSync?.syncedTargets ?? 0,
             reclaimedMb: stages.contextCompaction?.reclaimedMb ?? 0,
             contextDbAfterMb: stages.contextCompaction?.sizeAfterMb ?? null,
             liveModelsProbed: stages.quantcheck?.totalLiveProbed ?? null,
@@ -1025,7 +1114,7 @@ export async function runDailyJeanOptimization(options = {}) {
 const cli = defineCli({
     name: 'optimize-jean-daily',
     version: '1.0.0',
-    description: 'Daily 7-stage closed-loop optimization & ModularRSI self-improvement for Jean SRE',
+    description: 'Daily 8-stage closed-loop optimization & ModularRSI self-improvement for Jean SRE',
     options: {
         'dry-run': {
             type: 'boolean',

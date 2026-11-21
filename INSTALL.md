@@ -87,6 +87,6 @@ Before pulling any multi-GB model or starting background services:
 
 Share a concise status report:
 1. **Setup mode & paths**: Confirm where `jean-sre` was cloned and whether `krusch-stack doctor` passed.
-2. **Hermetic verification**: Report the exact `npm test` result (`65/65` unit, CSO compliance, `state-graph`, `quantcheck`, and distillation tests passing).
+2. **Hermetic verification**: Report the exact `npm test` result (`67/67` unit, CSO compliance, `state-graph`, `quantcheck`, and distillation tests passing).
 3. **Daemon & model status (if Mode B was requested)**: Report `http://127.0.0.1:3005/health` and `http://127.0.0.1:3005/state` status plus which `PERSONA_PROVIDER` / `PERSONA_MODEL` endpoints are configured in `.env`.
 4. **Safe next step**: Show how to inspect resident GGUF health (`npm run quantcheck`) or run a read-only audit pass once their target repo has a clean `git status`.
