@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
+    inferJeanTargetAndPhase,
     computeJeanTurnDifficulty,
     extractStructuredJeanConclusion,
     commitJeanStateTransition,
     hydrateJeanPersistentState,
     getJeanGraphStatus,
 } from '../src/state-graph.js';
+import {
+    evaluateChairResidencyPlan,
+    analyzeJeanSweepLogHealth,
+    runJeanModularRsiPass,
+    runDailyJeanOptimization,
+} from '../scripts/optimize_jean_daily.js';
 
 test('computeJeanTurnDifficulty maps 11-phase sweep & interactive prompts across Easy/Medium/Hard 3-Chair bands', () => {
     const easy = computeJeanTurnDifficulty('PROJECT: **krusch-cascade-router**\nCURRENT OBJECTIVE: Phase 0_ORIENTATION');
@@ -95,4 +105,131 @@ test('commitJeanStateTransition and hydrateJeanPersistentState persist and re-hy
     const status = await getJeanGraphStatus({ targetProject: 'demo-repo' });
     assert.equal(status.ok, true);
     assert.ok(status.data.recentTransitions.length >= 2);
+});
+
+test('inferJeanTargetAndPhase accurately resolves Implementer, Infra, Companion, and Session Open headers without grep pollution', () => {
+    const impl = inferJeanTargetAndPhase(
+        '## JEAN SRE: IMPLEMENTER PHASE — @homelab/.agent [1.7_VERIFICATION_AUDIT (8/11)]\nExecuted grep output mentioning projects/krusch-coding-harness/bin/krusch.js'
+    );
+    assert.equal(impl.targetProject, '@homelab/.agent');
+    assert.equal(impl.phase, '1.7_VERIFICATION_AUDIT');
+
+    const implDiff = computeJeanTurnDifficulty(
+        '## JEAN SRE: IMPLEMENTER PHASE — @homelab/.agent [1.7_VERIFICATION_AUDIT (8/11)]\nExecuted grep output mentioning projects/krusch-coding-harness/bin/krusch.js'
+    );
+    assert.equal(implDiff.targetProject, '@homelab/.agent');
+    assert.equal(implDiff.phase, '1.7_VERIFICATION_AUDIT');
+    assert.equal(implDiff.difficultyBand, 'hard');
+
+    const finalBacklog = inferJeanTargetAndPhase(
+        '## JEAN SRE: IMPLEMENTER PHASE (Final Master Backlog Synthesis — NO tool calls)\nThe THINKER analyzed the accumulated phase findings for **@homelab/lib** and produced the MASTER BACKLOG.\nReferences projects/pocket-lawyer'
+    );
+    assert.equal(finalBacklog.targetProject, '@homelab/lib');
+    assert.equal(finalBacklog.phase, '2_MASTER_BACKLOG');
+
+    const infraThinker = computeJeanTurnDifficulty('## JEAN: INFRASTRUCTURE AUDIT — KRUSCHDEV / LEGO_SCOUT');
+    assert.equal(infraThinker.targetProject, 'kruschdev');
+    assert.equal(infraThinker.phase, 'INFRA_LEGO_SCOUT');
+    assert.equal(infraThinker.difficultyBand, 'hard');
+
+    const infraSynth = computeJeanTurnDifficulty('## JEAN SRE: INFRA REPORT SYNTHESIS (kruschserv/docker)');
+    assert.equal(infraSynth.targetProject, 'kruschserv');
+    assert.equal(infraSynth.phase, 'INFRA_DOCKER');
+    assert.equal(infraSynth.difficultyBand, 'medium');
+
+    const comp = computeJeanTurnDifficulty('## JEAN SRE: COMPANION AUDITOR SYNTHESIS (deadbolt-public-board)');
+    assert.equal(comp.targetProject, 'deadbolt-public-board');
+    assert.equal(comp.phase, 'COMPANION_AUDIT');
+    assert.equal(comp.difficultyBand, 'medium');
+
+    const openSweep = inferJeanTargetAndPhase(
+        '## JEAN SRE: SESSION OPEN\nContainer list: projects/pocket-lawyer/docker-compose.yml'
+    );
+    assert.equal(openSweep.targetProject, 'fleet');
+    assert.equal(openSweep.phase, 'SESSION_OPEN');
+
+    const isolated = inferJeanTargetAndPhase('[Project Isolation Context: g-krusch] Check OAuth refresh handler');
+    assert.equal(isolated.targetProject, 'g-krusch');
+});
+
+test('Daily Jean SRE Optimizer evaluates 3rd-Chair VRAM residency, ModularRSI SIM attribution, and signed receipts', async () => {
+    // 1. Residency planner evicts legacy 7B VRAM thief and upgrades 4K -> 8K embed context
+    const driftedPlan = evaluateChairResidencyPlan([
+        { name: 'qwen2.5-coder:7b', size: 5_500_000_000, size_vram: 5_500_000_000, context_length: 16384 },
+        { name: 'snowflake-arctic-embed2:latest', size: 664_000_000, size_vram: 664_000_000, context_length: 4096 },
+    ]);
+    assert.deepEqual(driftedPlan.evictModels, ['qwen2.5-coder:7b']);
+    assert.equal(driftedPlan.pinThirdChair, true);
+    assert.equal(driftedPlan.pinEmbed, true);
+
+    const optimalPlan = evaluateChairResidencyPlan([
+        { name: 'gemma4:e2b', size: 4_600_000_000, size_vram: 4_600_000_000, context_length: 16384 },
+        { name: 'snowflake-arctic-embed2:latest', size: 1_200_000_000, size_vram: 1_200_000_000, context_length: 8192 },
+    ]);
+    assert.deepEqual(optimalPlan.evictModels, []);
+    assert.equal(optimalPlan.pinThirdChair, false);
+    assert.equal(optimalPlan.pinEmbed, false);
+
+    // 2. Sweep log parser + ModularRSI SIM attribution
+    const logHealth = analyzeJeanSweepLogHealth(
+        [
+            '[Sweep] Cycle 1 complete. Next phase: 1.2_COMPLIANCE_MATRIX',
+            '[Drift] BLOCKED: grep -rn "foo" ...',
+            '[Compliance Gate] 🛑 Tool call run_shell_command blocked: schema violation',
+            '[Persona] Pruning input message from 56000 chars to 32000 chars to stay within 16K context budget',
+        ].join('\n')
+    );
+    assert.equal(logHealth.cyclesCompleted, 1);
+    assert.equal(logHealth.driftBlockedCount, 1);
+    assert.equal(logHealth.complianceBlockedCount, 1);
+    assert.equal(logHealth.syntheticTrajectories.length, 2);
+
+    const rsi = runJeanModularRsiPass({
+        trajectories: [
+            { taskId: 'ok-1', success: true },
+            ...logHealth.syntheticTrajectories,
+        ],
+        round: 1,
+    });
+    assert.equal(rsi.failedTrajectories, 2);
+    assert.equal(rsi.appliedPatches.length, 2);
+    assert.equal(rsi.simSummary.problemCount, 2);
+
+    // 3. Full mocked daily pipeline emits signed envelope & SHA-256 receipt
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jean-daily-opt-'));
+    try {
+        const receiptPath = path.join(tmpDir, 'receipt.json');
+        const historyPath = path.join(tmpDir, 'history.jsonl');
+        const simPath = path.join(tmpDir, 'sim.json');
+        const rsiSpecsPath = path.join(tmpDir, 'specs.json');
+
+        const envRes = await runDailyJeanOptimization({
+            dryRun: false,
+            enableSkillOpt: false,
+            skipRemoteSync: true,
+            receiptPath,
+            historyPath,
+            simPath,
+            rsiSpecsPath,
+            mockStages: {
+                residency: async () => ({ ok: true, harnessReady: true }),
+                quantcheck: async () => ({ ok: true, endpointCount: 4, totalLiveProbed: 4 }),
+                contextCompaction: async () => ({ ok: true, sizeBeforeMb: 231.16, sizeAfterMb: 39.4, reclaimedMb: 191.76 }),
+                persistentMind: async () => ({ ok: true, selfGraphConnected: true }),
+                trajectories: async () => ({
+                    dbTrajectories: [{ taskId: 'job-1', success: true }],
+                    sweepLogHealth: logHealth,
+                }),
+            },
+        });
+
+        assert.equal(envRes.ok, true);
+        assert.equal(envRes.tool, 'jean.daily-optimize');
+        assert.equal(envRes.data.receiptSha256.length, 64);
+        assert.ok(fs.existsSync(receiptPath));
+        assert.ok(fs.existsSync(historyPath));
+        assert.ok(fs.existsSync(simPath));
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
 });

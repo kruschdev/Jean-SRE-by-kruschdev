@@ -97,16 +97,45 @@ export function inferJeanTargetAndPhase(promptText = '', hints = {}) {
     const explicitProj = hints.targetProject ? String(hints.targetProject).trim() : '';
     const explicitPhase = hints.phase ? String(hints.phase).trim() : '';
 
+    // Structured sweep / companion / infra headers (checked before body fallbacks so grep outputs never hijack targetProject)
+    const implHeader = text.match(/##\s*JEAN\s+SRE:\s*IMPLEMENTER\s+PHASE\s+[—–-]\s*([^\s\[]+)\s*\[([0-9A-Za-z._-]+)/i);
+    const implBacklogProj =
+        /##\s*JEAN\s+SRE:\s*IMPLEMENTER\s+PHASE\s*\(Final\s+Master\s+Backlog/i.test(text)
+            ? text.match(/findings\s+for\s+\*\*([^*]+)\*\*/i)?.[1] ||
+              text.match(/###\s*MASTER\s+BACKLOG:\s*([^\n]+)/i)?.[1]
+            : null;
+    const infraThinker = text.match(/##\s*JEAN:\s*INFRASTRUCTURE\s+AUDIT\s+[—–-]\s*([A-Za-z0-9_-]+)\s*\/\s*([A-Za-z0-9_-]+)/i);
+    const infraSynth = text.match(/##\s*JEAN\s+SRE:\s*INFRA\s+REPORT\s+SYNTHESIS\s*\(\s*([A-Za-z0-9_-]+)\s*\/\s*([A-Za-z0-9_-]+)\s*\)/i);
+    const companionThinker = text.match(/##\s*JEAN\s+SRE:\s*COMPANION\s+AUDITOR\s+[—–-]\s*([^\s\n]+)/i);
+    const companionSynth = text.match(/##\s*JEAN\s+SRE:\s*COMPANION\s+AUDITOR\s+SYNTHESIS\s*\(\s*([^)\n]+)\s*\)/i);
+    const isolatedProj = text.match(/\[Project\s+Isolation\s+Context:\s*([^\]]+)\]/i)?.[1];
+    const isSweepHeader = /^\s*##\s*(?:🛑\s*)?JEAN\b/i.test(text);
+
+    const infraNode = infraThinker?.[1] || infraSynth?.[1] || '';
+    const infraFocus = infraThinker?.[2] || infraSynth?.[2] || '';
+
     const projMatch =
         explicitProj ||
+        isolatedProj ||
+        implHeader?.[1] ||
+        implBacklogProj ||
+        (infraNode ? infraNode.toLowerCase() : '') ||
+        companionThinker?.[1] ||
+        companionSynth?.[1] ||
         text.match(/PROJECT:\s*\*\*([^*]+)\*\*/i)?.[1] ||
-        text.match(/Target Project:\s*`?([A-Za-z0-9_@/-]+)`?/i)?.[1] ||
+        text.match(/Target Project:\s*`?([A-Za-z0-9_@./-]+)`?/i)?.[1] ||
         text.match(/INFRA MODE[^:]*:\s*([A-Za-z0-9_-]+)/i)?.[1] ||
-        text.match(/\bprojects\/([A-Za-z0-9_-]+)/)?.[1] ||
+        (!isSweepHeader ? text.match(/\bprojects\/([A-Za-z0-9_-]+)/)?.[1] : '') ||
         'fleet';
 
+    const isSessionClose = /##\s*🛑\s*JEAN\s+SRE\s+PIPELINE:\s*SESSION\s+CLOSE/i.test(text);
     const phaseMatch =
         explicitPhase ||
+        implHeader?.[2] ||
+        (implBacklogProj ? '2_MASTER_BACKLOG' : '') ||
+        (infraFocus ? `INFRA_${infraFocus.toUpperCase()}` : '') ||
+        (companionThinker || companionSynth ? 'COMPANION_AUDIT' : '') ||
+        (isSessionClose ? 'SESSION_CLOSE' : '') ||
         text.match(/CURRENT OBJECTIVE:\s*Phase\s+([0-9A-Z._-]+)/i)?.[1] ||
         text.match(/CURRENT PHASE CHECKLIST:\s*([0-9A-Z._-]+)/i)?.[1] ||
         text.match(/PHASE:\s*([0-9A-Z._-]+)/i)?.[1] ||
@@ -177,7 +206,7 @@ export function computeJeanTurnDifficulty(promptText = '', options = {}) {
         return { complexityScore: 0.84, difficultyBand: 'hard', targetProject, phase };
     }
     if (
-        /\b(?:function|class|module|sql|query|docker|container|refactor|adapter|binding|schema|test|bug|error|grep|symbol)\b/i.test(
+        /\b(?:function|class|module|sql|query|docker|container|refactor|adapter|binding|schema|test|bug|error|grep|symbol|audit|rotation|phase|hierarchy|graph|hydradb|fleet|sre|gpu|vram|chair|node|status|telemetry|memory)\b/i.test(
             text
         ) ||
         text.length > 320
@@ -309,18 +338,26 @@ export async function getJeanSelfGraphAdapter() {
                 ],
             });
 
-            const store = new HydraDBStore(boltUrl, {
-                auth: ['neo4j', boltToken],
-            });
-            const graph = new SelfGraph(store, {
-                namespace,
-                schema,
-                schema_mode: 'warn',
-                contradiction: 'supersede',
-                resolver: 'default',
-            });
-            await graph.initialize();
-            return { graph, toJsonable, boltUrl, namespace };
+            const initOnce = async () => {
+                const store = new HydraDBStore(boltUrl, {
+                    auth: ['neo4j', boltToken],
+                });
+                const graph = new SelfGraph(store, {
+                    namespace,
+                    schema,
+                    schema_mode: 'warn',
+                    contradiction: 'supersede',
+                    resolver: 'default',
+                });
+                await graph.initialize();
+                return { graph, toJsonable, boltUrl, namespace };
+            };
+            try {
+                return await initOnce();
+            } catch (firstErr) {
+                await new Promise((r) => setTimeout(r, 180));
+                return await initOnce();
+            }
         } catch (err) {
             console.warn(`[JeanStateGraph] HydraDB SelfGraph unavailable (${err.message}); using PG/memory fallback.`);
             _activeAdapterPromise = null;

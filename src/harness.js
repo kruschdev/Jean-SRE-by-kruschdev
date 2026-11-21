@@ -283,13 +283,13 @@ RULES (NON-NEGOTIABLE):
 2. NEVER invent, paraphrase, or reconstruct code snippets from memory. Only quote verbatim lines that appear in the prompt with their exact line numbers.
 3. If a prior Pending Issue is not supported by the Live Source Verification lines shown in the prompt, REFUTE and remove it.
 4. When audited files satisfy all frozen specification invariants with zero P0/P1 defects, emit a calibrated CLEAN_PASS verdict ("findings": []) rather than inventing stylistic nitpicks.
-5. Assemble application services from @krusch/toolkit v1.6 and krusch_toolkit v1.4 Lego bricks (INV-LEGO-01..20), and enforce the Rule-of-3 anti-bloat gate when evaluating toolkit candidates: only extract recurring infrastructure patterns shared across >= 3 repositories; keep < 3-repo or domain-specific helpers project-local (BELOW_THRESHOLD_DO_NOT_EXTRACT).
+5. Assemble application services from @krusch/toolkit v1.8.1 and krusch_toolkit v1.6 Lego bricks (40 runtime bricks, INV-LEGO-01..36), and enforce the Rule-of-3 anti-bloat gate when evaluating toolkit candidates: only extract recurring infrastructure patterns shared across >= 3 repositories; keep < 3-repo or domain-specific helpers project-local (BELOW_THRESHOLD_DO_NOT_EXTRACT).
 6. Do NOT output <think> tags or filler prose. Follow the requested markdown section headers and JSON contracts exactly.`;
 
 const JEAN_CONSULT_SYSTEM_PROMPT = `You are Jean, the Autonomous Principal SRE & Architectural Advisor for the Krusch homelab fleet.
 RULES (NON-NEGOTIABLE):
 1. Answer architectural, SRE, and codebase triage questions directly in concise, structured GitHub Markdown grounded in the provided Homelab Architecture Reference and Live Audit State.
-2. Recommend exact @krusch/toolkit v1.6 and krusch_toolkit v1.4 subpath imports and function names (INV-LEGO-01..20) instead of hand-rolled HTTP, SSE, MCP, SQLite/PG, SSRF/rate-limit, Schema, Multipart Upload, Cascade, Audio, Webhook, or CLI boilerplate.
+2. Recommend exact @krusch/toolkit v1.8.1 and krusch_toolkit v1.6 subpath imports and function names (40 runtime bricks, INV-LEGO-01..36) instead of hand-rolled HTTP, SSE, MCP, SQLite/PG, SSRF/rate-limit, Idempotency, Audit Log, RBAC, Pagination, Safe YAML, Schema, Multipart Upload, Cascade, Audio, Brick Exchange, Webhook, or CLI boilerplate.
 3. Enforce the Rule-of-3 anti-bloat gate when evaluating candidate toolkit bricks: only extract recurring infrastructure patterns shared across >= 3 repositories (CANDIDATE_MEETS_RULE_OF_3 via /jean-loop-gate); explicitly reject < 3-repo or single-domain utilities as BELOW_THRESHOLD_DO_NOT_EXTRACT.
 4. Never hallucinate non-existent infrastructure (no nginx, k8s, Prometheus, or Grafana) or invent unverified file contents.
 5. Do NOT output <think> tags, filler prose, or bare Referee JSON envelopes unless explicitly asked for JSON.`;
@@ -454,9 +454,12 @@ function buildLiveAuditStateBrief() {
         const rotPath = join(projectRoot, 'JEAN_SRE_ROTATION.json');
         if (fs.existsSync(rotPath)) {
             const rot = JSON.parse(fs.readFileSync(rotPath, 'utf8'));
-            const proj = CURATED_ROTATION[(rot.projectRotationIndex || 0) % CURATED_ROTATION.length];
+            const proj =
+                (typeof rot.currentProjectName === 'string' && rot.currentProjectName.trim()) ||
+                CURATED_ROTATION[(rot.projectRotationIndex || 0) % CURATED_ROTATION.length];
             const phase = AUDIT_PHASE_NAMES[rot.currentPhaseIndex || 0] || String(rot.currentPhaseIndex);
-            parts.push(`### 📊 Live Jean SRE Rotation State\n- **Active Project:** \`${proj}\` (Phase: \`${phase}\`, Rotation Index: ${rot.projectRotationIndex ?? 0})\n- **Curated ${CURATED_ROTATION.length}-Repo Rotation:** ${CURATED_ROTATION.map(p => `\`${p}\``).join(', ')}`);
+            const convergedCount = rot.convergedProjects ? Object.keys(rot.convergedProjects).length : 0;
+            parts.push(`### 📊 Live Jean SRE Rotation State\n- **Active Project:** \`${proj}\` (Phase: \`${phase}\`, Rotation Index: ${rot.projectRotationIndex ?? 0}, Converged Repos: ${convergedCount})\n- **Curated ${CURATED_ROTATION.length}-Repo Core:** ${CURATED_ROTATION.map(p => `\`${p}\``).join(', ')}`);
         }
     } catch {}
 
@@ -511,15 +514,27 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
         const personaTarget = await resolveOpportunisticPersonaConfig({ isSweepPrompt });
         console.log(`[Persona] Cascade (${diffMeta.difficultyBand}=${diffMeta.complexityScore}) for ${diffMeta.targetProject}[${diffMeta.phase}]${personaTarget.isColabBurst ? ' [⚡ COLAB G4]' : ''}...`);
         const liveStateBrief = [isSweepPrompt ? '' : buildLiveAuditStateBrief(), graphState.promptBlock].filter(Boolean).join('\n\n');
-        const personaSystemPrompt = isSweepPrompt
+        const isEasyLocalTier = !personaTarget.isColabBurst && diffMeta.difficultyBand === 'easy';
+        const rawSystemPrompt = isSweepPrompt
             ? [JEAN_SYNTHESIS_SYSTEM_PROMPT, graphState.promptBlock].filter(Boolean).join('\n\n')
-            : `${JEAN_CONSULT_SYSTEM_PROMPT}\n\n${HOMELAB_CONTEXT}\n\n${liveStateBrief}`.trim();
+            : isEasyLocalTier
+              ? [JEAN_CONSULT_SYSTEM_PROMPT, liveStateBrief].filter(Boolean).join('\n\n')
+              : `${JEAN_CONSULT_SYSTEM_PROMPT}\n\n${HOMELAB_CONTEXT}\n\n${liveStateBrief}`.trim();
+        const personaSystemPrompt = isEasyLocalTier ? prunePromptForContext(rawSystemPrompt, 6000) : rawSystemPrompt;
 
-        const prunedMessage = prunePromptForContext(userMessage, personaTarget.maxPromptChars);
+        const maxUserChars = isEasyLocalTier ? Math.min(personaTarget.maxPromptChars, 6000) : personaTarget.maxPromptChars;
+        const prunedMessage = prunePromptForContext(userMessage, maxUserChars);
         const synthesisMessages = [
             { role: 'system', content: personaSystemPrompt },
             { role: 'user', content: prunedMessage }
         ];
+        const verifySynthesisOutput = (res) => {
+            const trimmed = String(res?.text || '').trim();
+            if (trimmed.length < 24) {
+                return { ok: false, reason: `Truncated synthesis (${trimmed.length} chars < 24); escalating to next Chair` };
+            }
+            return { ok: true };
+        };
         let finalResponse;
         let usedColabTeacher = personaTarget.isColabBurst;
         try {
@@ -527,8 +542,13 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
             finalResponse = await chat(
                 null,
                 null,
-                { ...personaTarget.config, temperature: 0.2, maxTokens: personaTarget.maxTokens },
-                { returnFullResponse: true, complexityScore: diffMeta.complexityScore, messages: sanitizeMessagesForOllama(synthesisMessages) }
+                { ...personaTarget.config, temperature: 0.2, maxTokens: isEasyLocalTier ? 1536 : personaTarget.maxTokens },
+                {
+                    returnFullResponse: true,
+                    complexityScore: diffMeta.complexityScore,
+                    verifyResult: verifySynthesisOutput,
+                    messages: sanitizeMessagesForOllama(synthesisMessages)
+                }
             );
             console.log(`[DEBUG] chat() returned via ${finalResponse.routedModel || personaTarget.model}.`);
         } catch (e) {
@@ -1170,27 +1190,42 @@ if (isMainModule) {
         app.get('/quantcheck', requireJeanAuth, async (req, res) => {
             try {
                 const { auditFleetQuantization, auditOllamaEndpointQuantization } = await import('./quantcheck.js');
+                const secondChairBase = String(process.env.LLAMA_SECOND_CHAIR_URL || '').trim();
+                let secondChairEmbedCandidate = process.env.SECOND_CHAIR_EMBED_URL || '';
+                if (!secondChairEmbedCandidate && secondChairBase) {
+                    try {
+                        const u = new URL(secondChairBase);
+                        secondChairEmbedCandidate = `${u.protocol}//${u.hostname}:11434`;
+                    } catch {}
+                }
                 const configuredUrls = Array.from(
                     new Set(
                         [
                             ...(process.env.OLLAMA_FLEET_URLS || '').split(','),
+                            process.env.LLAMA_FIRST_CHAIR_URL,
                             PERSONA_OLLAMA_URL,
                             EXECUTOR_OLLAMA_URL,
+                            secondChairBase,
+                            secondChairEmbedCandidate,
+                            process.env.OLLAMA_THIRD_CHAIR_URL,
                             process.env.OLLAMA_EMBED_HOST
                         ]
                             .map((u) => String(u || '').trim().replace(/\/+$/, ''))
                             .filter((u) => /^https?:\/\//i.test(u))
                     )
                 );
+                const rawTimeout = Number(req.query?.timeoutMs);
+                const timeoutMs = Number.isFinite(rawTimeout) && rawTimeout >= 5000 ? rawTimeout : 90_000;
                 const targetModel = typeof req.query?.model === 'string' && req.query.model.trim()
                     ? req.query.model.trim()
                     : null;
                 const envelope = targetModel
                     ? await auditOllamaEndpointQuantization({
                           baseUrl: configuredUrls[0] || 'http://127.0.0.1:11434',
-                          targetModel
+                          targetModel,
+                          timeoutMs
                       })
-                    : await auditFleetQuantization(configuredUrls);
+                    : await auditFleetQuantization(configuredUrls, { timeoutMs });
                 res.status(envelope.ok ? 200 : 503).json(envelope);
             } catch (error) {
                 res.status(500).json({ ok: false, tool: 'jean.quantcheck', error: { code: 'QUANTCHECK_ERROR', message: error.message } });

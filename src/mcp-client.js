@@ -260,7 +260,7 @@ async function _doInitMcpClients() {
           OLLAMA_EMBED_HOST: embedHost,
           OLLAMA_NODES: embedHost,
           EMBED_MODEL: embedModel,
-          TAG_MODEL: 'qwen2.5-coder:7b'
+          TAG_MODEL: process.env.TAG_MODEL || 'gemma4:e2b'
         },
         appRoot,
         20000

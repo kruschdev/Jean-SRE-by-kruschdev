@@ -39,8 +39,9 @@ All trajectories generated and verified by **Jean SRE** through **KruschStack** 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                   JEAN SRE AUTONOMOUS 24/7 SWEEP & HARNESS                 │
+│     • Persistent HydraDB + SelfGraph Mind (`src/state-graph.js`, `/state`) │
 │     • 11-Phase Code Audit Loop (`src/jean_sre_sweep.js`)                   │
-│     • Thinker/Executor Split + Opportunistic 120B Burst (`src/harness.js`) │
+│     • 3-Chair Bandit (`gemma4:e2b` -> `qwen3-30b` -> `inkling-2-mini`)     │
 │     • Live Test Verification + Distillation Capture (`data/public/`)       │
 └─────────────────────────────────────┬──────────────────────────────────────┘
                                       │ MCP Stdio / HTTP Bridge
@@ -83,7 +84,13 @@ For every repository in rotation, Jean SRE executes a deterministic 11-phase inv
 ### Closed-Loop `lego_scout` & Validated Brick Exchange Integration (`@krusch/toolkit/brick-exchange`)
 During background `lego_scout` and repository sweep cycles (`src/jean_sre_sweep.js`), Jean SRE pairs `@krusch/toolkit/lego-scout` (`scoutHomelabLegoCandidates`) with `@krusch/toolkit/brick-exchange`:
 - **Rule-of-3 Candidate Staging (`stageScoutCandidateSpecs`)**: When an unextracted infrastructure pattern appears across `>= 3` repositories (`CANDIDATE_MEETS_RULE_OF_3`), Jean SRE automatically drafts candidate brick specifications into the Brick Exchange inbox for sandboxed verification, adversarial fault-injection testing, and Ed25519 sealing (`krusch-lego seal`).
-- **Cryptographic `.brick-lock.json` Drift Verification (`auditRepoBrickLocks`)**: On every project audit, Jean SRE verifies that vendored `bricks/<id>/index.js` files match their Ed25519-sealed `codeHash` and `bundleHash` in `.brick-lock.json`, surfacing unsealed local drift alongside `<1ms` Slop-Breaker findings (`60/60` automated tests passing).
+- **Cryptographic `.brick-lock.json` Drift Verification (`auditRepoBrickLocks`)**: On every project audit, Jean SRE verifies that vendored `bricks/<id>/index.js` files match their Ed25519-sealed `codeHash` and `bundleHash` in `.brick-lock.json`, surfacing unsealed local drift alongside `<1ms` Slop-Breaker findings (`67/67` automated tests passing).
+
+### Database-First State Inversion & 3-Chair Bandit Cascade (`src/state-graph.js` & `GET /state`)
+Jean SRE decouples persistent engineering memory from stateless GPU weights (`provider: "three-chair"` via `@krusch/toolkit/cascade` `THREE_CHAIR_BANDIT_TIERS`):
+- **Persistent Graph Mind (`HydraDB v0.4.0` + `@hydradb/selfgraph`)**: Active focus (`CURRENT_FOCUS_OF`, `max_count: 1`) and verified architectural conclusions (`ACTIVE_CONCLUSION_FOR`, `max_count: 1`, `strategy: "ppr"`, `contradiction: "supersede"`) live in `HydraDB` + PostgreSQL + sealed Golden Bricks and are inspectable via `GET /state?project=<name>`.
+- **Stateless 3-Chair Local GPU Cascade**: Easy triage (`<= 0.35`) leases 3rd Chair `gemma4:e2b` (`16K` ctx), Medium repository audits (`0.36-0.68`) lease 2nd Chair `qwen3-coder-30b-moe:latest` (`16K` ctx), and Hard multi-step root-cause synthesis (`> 0.68`) leases 1st Chair `inkling-2-mini:ud-iq4_xs-dspark` (`32K` ctx), with optional `L2.5` `gpt-oss:120b` burst failover.
+- **Daily 7-Stage Closed-Loop Optimizer (`npm run optimize` / `scripts/optimize_jean_daily.js`)**: Enforces 3-Chair VRAM residency, runs 4-endpoint behavioral `quantcheck` canaries, compacts redundant SQLite text embeddings into binary `embedding_blob` storage, verifies `HydraDB` SelfGraph health, attributes trajectory failures via `ModularRSI` + `Self-Improvement Memory` (`SIM`), calibrates playbooks at `$0.00` via 1st Chair, and emits SHA-256-sealed daily receipts.
 
 ---
 
