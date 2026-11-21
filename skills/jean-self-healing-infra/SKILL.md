@@ -40,18 +40,18 @@ Monitor host loads, temperatures, and physical memory footprint across active fl
   > **Thermal Gating**: If any node GPU crosses `85°C`, instantly halt intensive processing, invoke dynamic offloading (see `/jean-thermal-rescale`), and send a warning card to the human loop gate.
 
 ### Phase 2: VRAM Allocation Audits
-Determine which LLM weights are currently active in physical GPU caches across all 3 primary nodes and verify `100% GPU` (`0% CPU`) and `UNTIL Forever` residency:
-- **Command (Model status check across all 5 GPUs)**:
+Determine which LLM weights and `llama-server` containers are currently active in physical GPU VRAM across all 3 primary nodes, verify `100% GPU` (`0% CPU`) residency, and confirm `kruschdev:11434` has `0` loaded Ollama models:
+- **Command (Model & container status check across all 5 GPUs)**:
   // turbo
   ```bash
-  ollama ps && ssh kruschdev "ollama ps" && ssh kruschserv "ollama ps"
+  ollama ps && ssh kruschdev "docker ps --filter name=krusch-first-chair-inkling; ollama ps; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader" && ssh kruschserv "docker ps --filter name=krusch-second-chair-qwen30b; ollama ps"
   ```
 
-### Phase 3: Dynamic Model Weight Pinning (`keep_alive: -1`)
-Optimize token generation speeds and prevent model load/unload swaps across the Multi-Family 5-GPU Fleet:
-1. **`kruschdev` (Dual RTX 2080 Ti NVLink)**: Pin `qwen3-coder-30b-moe:latest` (`num_ctx: 16384`, `q8_0` KV cache, `num_gpu: 99`, `keep_alive: -1`) as Jean SRE `PERSONA_MODEL`.
-2. **`kruschserv` (Dual RTX 3060)**: Pin `gemma4:e4b` (`num_ctx: 16384`, `q8_0` KV cache, `keep_alive: -1`) as Jean SRE `EXECUTOR_MODEL` alongside `hermes3:latest` (`num_ctx: 16384`, `q8_0` KV cache, `keep_alive: -1`).
-3. **`krusch` (Single RTX 2080 Ti)**: Pin `bge-large:latest` (`512` ctx, `keep_alive: -1`) + `qwen2.5-coder:7b` (`16384` ctx, `q8_0` KV cache, `keep_alive: -1`).
+### Phase 3: 3-Chair All-VRAM Residency (`100% GPU`)
+Maintain permanent VRAM residency and prevent model load/unload swaps across the 3-Chair 5-GPU Fleet:
+1. **1st Chair `kruschdev:18080` (Dual RTX 2080 Ti NVLink)**: Verify `krusch-first-chair-inkling` container serving `inkling-2-mini:ud-iq4_xs-dspark` (`32,768` ctx, `38.0 tok/s`, `100% GPU`) as Jean SRE `PERSONA_MODEL` & `EXECUTOR_MODEL` (`provider: "three-chair"`), and ensure `ollama ps` on `kruschdev:11434` has `0` loaded models (`scripts/ensure_first_chair_inkling.sh --host kruschdev`).
+2. **2nd Chair `kruschserv:18080` + `:11434` (Dual RTX 3060)**: Verify `krusch-second-chair-qwen30b` serving `qwen3-coder-30b-moe:latest` (`16,384` ctx, `82.9 tok/s`, `100% GPU`) on `:18080` + pin `snowflake-arctic-embed2:latest` (`8,192` ctx, `keep_alive: -1`) on `:11434`.
+3. **3rd Chair `krusch:11434` (Single RTX 2080 Ti)**: Pin `gemma4:e2b` (`16,384` ctx, `108.4 tok/s`, `keep_alive: -1`) + `snowflake-arctic-embed2:latest` (`8,192` ctx, `1024d`, `keep_alive: -1`).
 
 ### Phase 4: Container Auto-Recovery (Stale/Looping services)
 If a staging or production container is unresponsive or continuously failing health endpoint checks:
@@ -71,7 +71,7 @@ bash /home/krusch/homelab/projects/halo/run_halo.sh --analyze-latency
 
 ### Phase 6: Nuggets Memory Persistence
 Record successfully applied hardware parameters as permanent operational hints:
-- Call `krusch_context_remember({ category: "invariant", key: "gpu-tuning", content: "Locked qwen3-coder-30b-moe:latest (kruschdev Dual 2080 Ti NVLink), gemma4:e4b + hermes3:latest (kruschserv Dual 3060), and bge-large:latest + qwen2.5-coder:7b (krusch 2080 Ti) at 100% GPU with keep_alive: -1." })`.
+- Call `krusch_context_remember({ category: "invariant", key: "gpu-tuning", content: "Verified 3-Chair 5-GPU residency: inkling-2-mini:ud-iq4_xs-dspark on kruschdev:18080 (Dual 2080 Ti NVLink, 0 models on :11434), qwen3-coder-30b-moe:latest on kruschserv:18080 + snowflake-arctic-embed2:latest on :11434 (Dual 3060), and gemma4:e2b + snowflake-arctic-embed2:latest on krusch:11434 (2080 Ti) at 100% GPU." })`.
 
 ---
 

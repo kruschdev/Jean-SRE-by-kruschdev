@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
     inferJeanTargetAndPhase,
     computeJeanTurnDifficulty,
@@ -13,11 +14,17 @@ import {
 } from '../src/state-graph.js';
 import {
     evaluateChairResidencyPlan,
+    evaluateStagedOllamaEvictionPlan,
+    stageThreeChairResidency,
     analyzeJeanSweepLogHealth,
     runJeanModularRsiPass,
     runDailyJeanOptimization,
     buildSafeSourceSyncArgs,
 } from '../scripts/optimize_jean_daily.js';
+import { scanTextForLeaks } from '../../../lib/scripts/verify-zero-leaks.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 test('computeJeanTurnDifficulty maps 11-phase sweep & interactive prompts across Easy/Medium/Hard 3-Chair bands', () => {
     const easy = computeJeanTurnDifficulty('PROJECT: **krusch-cascade-router**\nCURRENT OBJECTIVE: Phase 0_ORIENTATION');
@@ -110,31 +117,31 @@ test('commitJeanStateTransition and hydrateJeanPersistentState persist and re-hy
 
 test('inferJeanTargetAndPhase accurately resolves Implementer, Infra, Companion, and Session Open headers without grep pollution', () => {
     const impl = inferJeanTargetAndPhase(
-        '## JEAN SRE: IMPLEMENTER PHASE — @homelab/.agent [1.7_VERIFICATION_AUDIT (8/11)]\nExecuted grep output mentioning projects/krusch-coding-harness/bin/krusch.js'
+        '## JEAN SRE: IMPLEMENTER PHASE — @workspace/.agent [1.7_VERIFICATION_AUDIT (8/11)]\nExecuted grep output mentioning projects/krusch-coding-harness/bin/krusch.js'
     );
-    assert.equal(impl.targetProject, '@homelab/.agent');
+    assert.equal(impl.targetProject, '@workspace/.agent');
     assert.equal(impl.phase, '1.7_VERIFICATION_AUDIT');
 
     const implDiff = computeJeanTurnDifficulty(
-        '## JEAN SRE: IMPLEMENTER PHASE — @homelab/.agent [1.7_VERIFICATION_AUDIT (8/11)]\nExecuted grep output mentioning projects/krusch-coding-harness/bin/krusch.js'
+        '## JEAN SRE: IMPLEMENTER PHASE — @workspace/.agent [1.7_VERIFICATION_AUDIT (8/11)]\nExecuted grep output mentioning projects/krusch-coding-harness/bin/krusch.js'
     );
-    assert.equal(implDiff.targetProject, '@homelab/.agent');
+    assert.equal(implDiff.targetProject, '@workspace/.agent');
     assert.equal(implDiff.phase, '1.7_VERIFICATION_AUDIT');
     assert.equal(implDiff.difficultyBand, 'hard');
 
     const finalBacklog = inferJeanTargetAndPhase(
-        '## JEAN SRE: IMPLEMENTER PHASE (Final Master Backlog Synthesis — NO tool calls)\nThe THINKER analyzed the accumulated phase findings for **@homelab/lib** and produced the MASTER BACKLOG.\nReferences projects/pocket-lawyer'
+        '## JEAN SRE: IMPLEMENTER PHASE (Final Master Backlog Synthesis — NO tool calls)\nThe THINKER analyzed the accumulated phase findings for **@workspace/lib** and produced the MASTER BACKLOG.\nReferences projects/pocket-lawyer'
     );
-    assert.equal(finalBacklog.targetProject, '@homelab/lib');
+    assert.equal(finalBacklog.targetProject, '@workspace/lib');
     assert.equal(finalBacklog.phase, '2_MASTER_BACKLOG');
 
-    const infraThinker = computeJeanTurnDifficulty('## JEAN: INFRASTRUCTURE AUDIT — KRUSCHDEV / LEGO_SCOUT');
-    assert.equal(infraThinker.targetProject, 'kruschdev');
+    const infraThinker = computeJeanTurnDifficulty('## JEAN: INFRASTRUCTURE AUDIT — PRIMARY_NODE / LEGO_SCOUT');
+    assert.equal(infraThinker.targetProject, 'primary_node');
     assert.equal(infraThinker.phase, 'INFRA_LEGO_SCOUT');
     assert.equal(infraThinker.difficultyBand, 'hard');
 
-    const infraSynth = computeJeanTurnDifficulty('## JEAN SRE: INFRA REPORT SYNTHESIS (kruschserv/docker)');
-    assert.equal(infraSynth.targetProject, 'kruschserv');
+    const infraSynth = computeJeanTurnDifficulty('## JEAN SRE: INFRA REPORT SYNTHESIS (secondary-node/docker)');
+    assert.equal(infraSynth.targetProject, 'secondary-node');
     assert.equal(infraSynth.phase, 'INFRA_DOCKER');
     assert.equal(infraSynth.difficultyBand, 'medium');
 
@@ -248,4 +255,137 @@ test('Daily Jean SRE Optimizer evaluates 3rd-Chair VRAM residency, ModularRSI SI
     assert.ok(rsyncArgs.includes('--exclude=.env*'));
     assert.throws(() => buildSafeSourceSyncArgs({ srcDir: '../etc', destSpec: 'x:/y' }), /Unsafe/);
     assert.throws(() => buildSafeSourceSyncArgs({ srcDir: 'benchmarks/locomo', destSpec: 'x:/y' }), /Unsafe/);
+});
+
+test('evaluateStagedOllamaEvictionPlan and stageThreeChairResidency evict staged 1st-Chair Ollama models, heal all configured containers, and pass zero-leak scan', async () => {
+    assert.deepEqual(evaluateStagedOllamaEvictionPlan([]), { evictModels: [] });
+    assert.deepEqual(
+        evaluateStagedOllamaEvictionPlan([
+            { name: 'qwen3-coder-30b-moe:latest' },
+            { model: 'gemma4:e4b' },
+            { name: 'qwen3-coder-30b-moe:latest' },
+            { name: '' },
+        ]),
+        { evictModels: ['qwen3-coder-30b-moe:latest', 'gemma4:e4b'] }
+    );
+
+    const fetchCalls = [];
+    const hostCalls = [];
+    const mockFetch = async (url, opts = {}) => {
+        const bodyObj = opts.body ? JSON.parse(opts.body) : null;
+        fetchCalls.push({ url, method: opts.method || 'GET', body: bodyObj });
+        if (url === 'http://127.0.0.1:11434/api/ps') {
+            return {
+                ok: true,
+                status: 200,
+                text: async () =>
+                    JSON.stringify({
+                        models: [
+                            { name: 'gemma4:e2b', size: 4_600_000_000, size_vram: 4_600_000_000, context_length: 16384 },
+                            { name: 'snowflake-arctic-embed2:latest', size: 1_200_000_000, size_vram: 1_200_000_000, context_length: 8192 },
+                        ],
+                    }),
+            };
+        }
+        if (url === 'http://staged-first-chair.example.test:11434/api/ps') {
+            return {
+                ok: true,
+                status: 200,
+                text: async () =>
+                    JSON.stringify({
+                        models: [
+                            { name: 'qwen3-coder-30b-moe:latest' },
+                            { model: 'gemma4:e4b' },
+                        ],
+                    }),
+            };
+        }
+        if (url === 'http://staged-first-chair.example.test:11434/api/generate') {
+            return { ok: true, status: 200, text: async () => JSON.stringify({ done: true }) };
+        }
+        if (url === 'http://127.0.0.1:3005/health') {
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({ ready: true, mcp_servers: ['context', 'git'] }),
+            };
+        }
+        throw new Error(`Unexpected URL in mockFetch: ${url}`);
+    };
+
+    const mockExecHost = async (host, cmd) => {
+        hostCalls.push({ host, cmd });
+        if (cmd.startsWith('nvidia-smi')) {
+            return { stdout: '48\n51', stderr: '' };
+        }
+        if (host === 'primary.example.test' && cmd.startsWith('docker inspect')) {
+            return {
+                stdout: [
+                    '/jean-sre-jean-harness-1=running:healthy',
+                    '/jean-sre-jean-sweep-1=running:none',
+                    '/first-chair-inkling=exited:none',
+                    '/hydrascope-hydradb=running:unhealthy',
+                ].join('\n'),
+                stderr: '',
+            };
+        }
+        if (host === 'secondary.example.test' && cmd.startsWith('docker inspect')) {
+            return {
+                stdout: [
+                    '/second-chair-coder=exited:none',
+                    '/pgvector-db=running:healthy',
+                ].join('\n'),
+                stderr: '',
+            };
+        }
+        if (cmd.startsWith('docker restart')) {
+            return { stdout: 'restarted', stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+    };
+
+    const res = await stageThreeChairResidency({
+        dryRun: false,
+        skipLocalGpuProbe: true,
+        fetchImpl: mockFetch,
+        execHostImpl: mockExecHost,
+        env: {
+            OLLAMA_THIRD_CHAIR_URL: 'http://127.0.0.1:11434',
+            FIRST_CHAIR_STAGED_OLLAMA_URL: 'http://staged-first-chair.example.test:11434/',
+            JEAN_AGENT_URL: 'http://127.0.0.1:3005',
+            JEAN_PRIMARY_HOST: 'primary.example.test',
+            JEAN_PRIMARY_CONTAINERS: 'jean-sre-jean-harness-1 jean-sre-jean-sweep-1 first-chair-inkling hydrascope-hydradb',
+            JEAN_SECONDARY_HOST: 'secondary.example.test',
+            JEAN_SECONDARY_CONTAINERS: 'second-chair-coder pgvector-db',
+        },
+    });
+
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.firstChairStagedEvictedModels, ['qwen3-coder-30b-moe:latest', 'gemma4:e4b']);
+    assert.ok(res.actions.includes('evicted:qwen3-coder-30b-moe:latest@first-chair-staged-ollama'));
+    assert.ok(res.actions.includes('evicted:gemma4:e4b@first-chair-staged-ollama'));
+    assert.ok(res.actions.includes('restarted:first-chair-inkling'));
+    assert.ok(res.actions.includes('restarted:hydrascope-hydradb'));
+    assert.ok(res.actions.includes('restarted:second-chair-coder'));
+    assert.equal(res.actions.includes('restarted:jean-sre-jean-harness-1'), false);
+    assert.equal(res.actions.includes('restarted:pgvector-db'), false);
+
+    const restartCmds = hostCalls.filter((c) => c.cmd.startsWith('docker restart'));
+    assert.deepEqual(restartCmds, [
+        { host: 'primary.example.test', cmd: 'docker restart first-chair-inkling' },
+        { host: 'primary.example.test', cmd: 'docker restart hydrascope-hydradb' },
+        { host: 'secondary.example.test', cmd: 'docker restart second-chair-coder' },
+    ]);
+
+    const evictionPosts = fetchCalls.filter(
+        (c) => c.url === 'http://staged-first-chair.example.test:11434/api/generate'
+    );
+    assert.equal(evictionPosts.length, 2);
+    assert.equal(evictionPosts[0].body.keep_alive, 0);
+    assert.equal(evictionPosts[1].body.keep_alive, 0);
+
+    const optSrc = fs.readFileSync(path.resolve(__dirname, '../scripts/optimize_jean_daily.js'), 'utf8');
+    const testSrc = fs.readFileSync(__filename, 'utf8');
+    assert.deepEqual(scanTextForLeaks(optSrc, 'scripts/optimize_jean_daily.js'), []);
+    assert.deepEqual(scanTextForLeaks(testSrc, 'tests/state-graph.test.js'), []);
 });

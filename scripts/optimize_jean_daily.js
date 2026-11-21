@@ -191,6 +191,27 @@ export function evaluateChairResidencyPlan(psModels = []) {
 }
 
 /**
+ * Compute deterministic eviction actions for a dedicated `llama-server` Chair host's
+ * staged `:11434` Ollama daemon so 100% VRAM stays reserved for the Chair container.
+ *
+ * @param {Array<{ name?: string, model?: string }>} psModels
+ * @returns {{ evictModels: string[] }}
+ */
+export function evaluateStagedOllamaEvictionPlan(psModels = []) {
+    const seen = new Set();
+    const evictModels = [];
+    for (const m of Array.isArray(psModels) ? psModels : []) {
+        const name = String(m?.name || m?.model || '').trim();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        evictModels.push(name);
+    }
+    return { evictModels };
+}
+
+export const evictStagedModelsPlan = evaluateStagedOllamaEvictionPlan;
+
+/**
  * Parse recent `jean-sweep` log lines into structured health & RSI trajectory signals.
  *
  * @param {string} rawLogs
@@ -295,30 +316,43 @@ async function fetchJson(url, options = {}, timeoutMs = 20_000, fetchImpl = glob
 
 /**
  * Stage 1: Verify thermal headroom, enforce 3-Chair All-VRAM residency (`100% GPU`),
- * and self-heal Jean SRE containers if degraded.
+ * evict stray staged `:11434` models on the 1st-Chair host, and self-heal Chair/Jean containers if degraded.
  */
-async function stageThreeChairResidency({ dryRun, env, fetchImpl }) {
+export async function stageThreeChairResidency({
+    dryRun,
+    env,
+    fetchImpl,
+    execHostImpl = runHostCommand,
+    skipLocalGpuProbe = false,
+}) {
     const thirdChairUrl = env.OLLAMA_THIRD_CHAIR_URL || 'http://127.0.0.1:11434';
+    const firstChairStagedOllamaUrl = String(env.FIRST_CHAIR_STAGED_OLLAMA_URL || '')
+        .trim()
+        .replace(/\/+$/, '');
     const secondChairEmbedUrl = env.SECOND_CHAIR_EMBED_URL || '';
     const jeanHarnessUrl = env.JEAN_AGENT_URL || 'http://127.0.0.1:3005';
     const primaryHost = env.JEAN_PRIMARY_HOST || 'local';
     const secondaryHost = env.JEAN_SECONDARY_HOST || '';
 
     const gpuTemps = {};
-    try {
-        const { stdout: localGpu } = await execFileAsync(
-            'nvidia-smi',
-            ['--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'],
-            { timeout: 5000 }
-        );
-        gpuTemps.local = Math.max(...localGpu.trim().split('\n').map(Number).filter(Number.isFinite));
-    } catch {
+    if (!skipLocalGpuProbe) {
+        try {
+            const { stdout: localGpu } = await execFileAsync(
+                'nvidia-smi',
+                ['--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'],
+                { timeout: 5000 }
+            );
+            gpuTemps.local = Math.max(...localGpu.trim().split('\n').map(Number).filter(Number.isFinite));
+        } catch {
+            gpuTemps.local = null;
+        }
+    } else {
         gpuTemps.local = null;
     }
 
     for (const node of [primaryHost, secondaryHost].filter((n) => n && n !== 'local')) {
         try {
-            const { stdout } = await runHostCommand(
+            const { stdout } = await execHostImpl(
                 node,
                 'nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits',
                 8000
@@ -342,6 +376,45 @@ async function stageThreeChairResidency({ dryRun, env, fetchImpl }) {
     const psData = await fetchJson(`${thirdChairUrl}/api/ps`, {}, 8000, fetchImpl);
     const plan = evaluateChairResidencyPlan(psData?.models || []);
     const actions = [];
+    const firstChairStagedEvictedModels = [];
+
+    if (firstChairStagedOllamaUrl) {
+        try {
+            const stagedPsData = await fetchJson(`${firstChairStagedOllamaUrl}/api/ps`, {}, 8000, fetchImpl);
+            const stagedPlan = evaluateStagedOllamaEvictionPlan(stagedPsData?.models || []);
+            if (!dryRun) {
+                for (const m of stagedPlan.evictModels) {
+                    try {
+                        await fetchJson(
+                            `${firstChairStagedOllamaUrl}/api/generate`,
+                            {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ model: m, prompt: '', stream: false, keep_alive: 0 }),
+                            },
+                            15_000,
+                            fetchImpl
+                        );
+                    } catch {
+                        await fetchJson(
+                            `${firstChairStagedOllamaUrl}/api/embed`,
+                            {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ model: m, input: '', keep_alive: 0 }),
+                            },
+                            15_000,
+                            fetchImpl
+                        );
+                    }
+                    firstChairStagedEvictedModels.push(m);
+                    actions.push(`evicted:${m}@first-chair-staged-ollama`);
+                }
+            }
+        } catch {
+            // Staged Ollama daemon may be intentionally inactive on dedicated llama-server Chair hosts
+        }
+    }
 
     if (!dryRun) {
         for (const staleModel of plan.evictModels) {
@@ -419,44 +492,74 @@ async function stageThreeChairResidency({ dryRun, env, fetchImpl }) {
 
     const primaryContainers = env.JEAN_PRIMARY_CONTAINERS || 'jean-sre-jean-harness-1 jean-sre-jean-sweep-1';
     const secondaryContainers = env.JEAN_SECONDARY_CONTAINERS || '';
+    const primaryContainerList = primaryContainers
+        .split(/\s+/)
+        .map((s) => s.trim())
+        .filter((s) => /^[A-Za-z0-9_.-]+$/.test(s));
+    const secondaryContainerList = secondaryContainers
+        .split(/\s+/)
+        .map((s) => s.trim())
+        .filter((s) => /^[A-Za-z0-9_.-]+$/.test(s));
     const containerStates = {};
+    const primaryContainerStates = {};
+    const secondaryContainerStates = {};
 
-    try {
-        const { stdout: devRaw } = await runHostCommand(
-            primaryHost,
-            `docker inspect --format '{{.Name}}={{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ${primaryContainers} 2>/dev/null || true`,
-            10_000
-        );
-        for (const line of devRaw.split('\n').filter(Boolean)) {
-            const [name, status] = line.replace(/^\//, '').trim().split('=');
-            if (name) containerStates[name] = status;
+    if (primaryContainerList.length > 0) {
+        try {
+            const { stdout: devRaw } = await execHostImpl(
+                primaryHost,
+                `docker inspect --format '{{.Name}}={{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ${primaryContainerList.join(' ')} 2>/dev/null || true`,
+                10_000
+            );
+            for (const line of devRaw.split('\n').filter(Boolean)) {
+                const [name, status] = line.replace(/^\//, '').trim().split('=');
+                if (name) {
+                    primaryContainerStates[name] = status;
+                    containerStates[name] = status;
+                }
+            }
+        } catch {
+            // Docker inspect optional in non-containerized setups
         }
-    } catch {
-        // Docker inspect optional in non-containerized setups
     }
 
-    if (secondaryHost && secondaryContainers) {
+    if (secondaryHost && secondaryContainerList.length > 0) {
         try {
-            const { stdout: servRaw } = await runHostCommand(
+            const { stdout: servRaw } = await execHostImpl(
                 secondaryHost,
-                `docker inspect --format '{{.Name}}={{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ${secondaryContainers} 2>/dev/null || true`,
+                `docker inspect --format '{{.Name}}={{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ${secondaryContainerList.join(' ')} 2>/dev/null || true`,
                 10_000
             );
             for (const line of servRaw.split('\n').filter(Boolean)) {
                 const [name, status] = line.replace(/^\//, '').trim().split('=');
-                if (name) containerStates[name] = status;
+                if (name) {
+                    secondaryContainerStates[name] = status;
+                    containerStates[name] = status;
+                }
             }
         } catch {
             // Optional secondary host check
         }
     }
 
-    for (const jeanCtr of ['jean-sre-jean-harness-1', 'jean-sre-jean-sweep-1']) {
-        if (Object.prototype.hasOwnProperty.call(containerStates, jeanCtr)) {
-            const st = containerStates[jeanCtr] || 'missing';
+    for (const ctr of primaryContainerList) {
+        if (Object.prototype.hasOwnProperty.call(primaryContainerStates, ctr)) {
+            const st = primaryContainerStates[ctr] || 'missing';
             if ((!st.startsWith('running:') || st.endsWith(':unhealthy')) && !dryRun) {
-                await runHostCommand(primaryHost, `docker restart ${jeanCtr}`, 25_000);
-                actions.push(`restarted:${jeanCtr}`);
+                await execHostImpl(primaryHost, `docker restart ${ctr}`, 25_000);
+                actions.push(`restarted:${ctr}`);
+            }
+        }
+    }
+
+    if (secondaryHost && secondaryContainerList.length > 0) {
+        for (const ctr of secondaryContainerList) {
+            if (Object.prototype.hasOwnProperty.call(secondaryContainerStates, ctr)) {
+                const st = secondaryContainerStates[ctr] || 'missing';
+                if ((!st.startsWith('running:') || st.endsWith(':unhealthy')) && !dryRun) {
+                    await execHostImpl(secondaryHost, `docker restart ${ctr}`, 25_000);
+                    actions.push(`restarted:${ctr}`);
+                }
             }
         }
     }
@@ -474,6 +577,7 @@ async function stageThreeChairResidency({ dryRun, env, fetchImpl }) {
             contextLength: m.context_length,
             gpuRatio: m.size ? Number((m.size_vram / m.size).toFixed(3)) : 1,
         })),
+        firstChairStagedEvictedModels,
         containers: containerStates,
         harnessReady: Boolean(health?.ready),
         connectedMcpServers: health?.mcp_servers || [],
@@ -982,9 +1086,11 @@ export async function runDailyJeanOptimization(options = {}) {
                 backupSkill,
                 2,
                 {
-                    provider: 'openai-compatible',
+                    provider: 'openai',
                     apiUrl: `${firstChairUrl.replace(/\/+$/, '')}/v1/chat/completions`,
                     model: env.PERSONA_MODEL || 'inkling-2-mini:ud-iq4_xs-dspark',
+                    maxTokens: 6144,
+                    timeout: 90_000,
                     temperature: 0.1,
                 },
                 options.skillOptOptions || {}

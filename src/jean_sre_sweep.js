@@ -2929,8 +2929,8 @@ function buildProjectAuditContext(projectPath, phase, inflightBlock = '', option
         sections.push(teacherBrief);
     }
 
-    // Inject Live Project Test Suite Execution Report (runs in all phases during G4 Burst, and in Orientation/Verification/Risk/Adversarial/Backlog phases locally)
-    const shouldIncludeLiveTests = isColabBurst || ['0_ORIENTATION', '1.7_VERIFICATION_AUDIT', '1.8_RISK_MAP', '1.9_ADVERSARIAL_REVIEW', '2_MASTER_BACKLOG'].includes(phase);
+    // Inject Live Project Test Suite Execution Report (runs in all phases during G4 Burst, and in Verification/Risk/Adversarial/Backlog phases locally)
+    const shouldIncludeLiveTests = isColabBurst || ['1.7_VERIFICATION_AUDIT', '1.8_RISK_MAP', '1.9_ADVERSARIAL_REVIEW', '2_MASTER_BACKLOG'].includes(phase);
     if (shouldIncludeLiveTests) {
         const testSuiteResult = runProjectVerificationSuite(projectPath, { force: phase === '1.7_VERIFICATION_AUDIT' });
         if (testSuiteResult?.report) {
@@ -2987,7 +2987,7 @@ function buildProjectAuditContext(projectPath, phase, inflightBlock = '', option
     // Place Live Source Verification AFTER Accumulated Checkpoints so Ground Truth overrides any prior summary
     const pendingEvidence = buildPendingIssueCodeEvidence(inflightBlock, projectPath, phase);
     if (pendingEvidence) {
-        const evidenceCap = isColabBurst ? 8500 : (hasFoldedSpanContext ? 2200 : 6500);
+        const evidenceCap = isColabBurst ? 8500 : (phase === '0_ORIENTATION' ? 1600 : (hasFoldedSpanContext ? 2200 : 6500));
         sections.push(`**🔍 Live Source Verification for Mentioned Symbols/Files in Inflight (GROUND TRUTH — overrides any prior summary):**\n${pendingEvidence.slice(0, evidenceCap)}`);
     }
 
@@ -4185,6 +4185,7 @@ function getPhaseScopedChecklist(fullText, phase) {
                         checkpointText: finalCheckpointText,
                         isCleanPass: isSynthesisPhase ? isCleanPassBacklog(finalCheckpointText) : false,
                         cards: isSynthesisPhase ? parseMasterBacklogCards(finalCheckpointText) : [],
+                        isColabBurst: colabStatus.active,
                         thinkerModel: THINKER_MODEL,
                         workerModel: WORKER_MODEL,
                         callTool

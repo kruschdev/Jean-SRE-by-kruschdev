@@ -522,7 +522,7 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
               : `${JEAN_CONSULT_SYSTEM_PROMPT}\n\n${HOMELAB_CONTEXT}\n\n${liveStateBrief}`.trim();
         const personaSystemPrompt = isEasyLocalTier ? prunePromptForContext(rawSystemPrompt, 6000) : rawSystemPrompt;
 
-        const maxUserChars = isEasyLocalTier ? Math.min(personaTarget.maxPromptChars, 6000) : personaTarget.maxPromptChars;
+        const maxUserChars = isEasyLocalTier ? Math.min(personaTarget.maxPromptChars, isSweepPrompt ? 22000 : 6000) : personaTarget.maxPromptChars;
         const prunedMessage = prunePromptForContext(userMessage, maxUserChars);
         const synthesisMessages = [
             { role: 'system', content: personaSystemPrompt },
