@@ -4,9 +4,9 @@ export const HOMELAB_CONTEXT = `
 ### Nodes & Multi-Family 5-GPU Residency (keep_alive: -1, 100% GPU)
 | Node | Role | CPU | GPU | RAM | Key Services & Pinned Resident Models |
 |------|------|-----|-----|-----|---------------------------------------|
-| krusch | Central Orchestrator + Dev Station | i7-5820K | RTX 2080 Ti 11GB | 32GB | Director, Companion, Whisper STT, Ollama (snowflake-arctic-embed2:latest + qwen2.5-coder:7b pinned keep_alive: -1) |
-| kruschdev | Heavy Compute + Swarm Worker | Xeon E5-2698 v4 20C/40T | Dual RTX 2080 Ti 22GB (NVLink) | 64GB ECC | Jean SRE, Ollama (qwen3-coder-30b-moe:latest ~19.6GB pinned keep_alive: -1 for Jean PERSONA_MODEL) |
-| kruschserv | Production Host + Vector DB | Xeon 20C/40T | Dual RTX 3060 24GB | 80GB | Pocket Lawyer, kruschdb (PG Vector), DBOS Server, Ollama (gemma4:e4b + hermes3:latest + snowflake-arctic-embed2:latest pinned keep_alive: -1) |
+| krusch | Central Orchestrator + 3rd Chair | i7-5820K | RTX 2080 Ti 11GB | 32GB | Director, Companion, Whisper STT, Ollama :11434 (gemma4:e2b + snowflake-arctic-embed2:latest pinned keep_alive: -1) |
+| kruschdev | Heavy Compute + 1st Chair | Xeon E5-2698 v4 20C/40T | Dual RTX 2080 Ti 22GB (NVLink) | 64GB ECC | Jean SRE, llama-server :18080 (inkling-2-mini:ud-iq4_xs-dspark 32K ctx 100% VRAM for Jean PERSONA_MODEL & EXECUTOR_MODEL) |
+| kruschserv | Production Host + 2nd Chair | Xeon 20C/40T | Dual RTX 3060 24GB | 80GB | Pocket Lawyer, kruschdb (PG Vector), llama-server :18080 (qwen3-coder-30b-moe:latest) + Ollama :11434 (snowflake-arctic-embed2:latest) |
 | kruschgame | Standby Sandbox Laptop | i5-11400H 6C/12T | RTX 3050 4GB | 32GB | Standby Emulation / Sandbox (frequently powered off) |
 | kruschmedia | Dedicated Media + Backups | i7-4790S 4C/8T | AMD RX 5500 8GB | 32GB | Jellyfin, Media Storage, Backups |
 
@@ -298,15 +298,15 @@ Look for: rotated logs not cleaned up, duplicate model/archive blobs across moun
         case 'services':
             return `**Goal**: Find service optimization — failed units, unnecessary services, GPU VRAM health, and agent self-state security.
 Services that are enabled but broken, or running but unused, waste resources silently.
-Note: Under the Multi-Family 5-GPU Policy, Ollama models (\`qwen3-coder-30b-moe:latest\` ~19.6GB on \`kruschdev\`, \`gemma4:e4b\` + \`hermes3:latest\` + \`snowflake-arctic-embed2:latest\` on \`kruschserv\`, \`snowflake-arctic-embed2:latest\` + \`qwen2.5-coder:7b\` on \`krusch\`) are intentionally pinned in VRAM via native \`keep_alive: -1\` (replaces the retired \`keep_hot.js\` script). Do NOT flag pinned resident Ollama models or the absence of \`keep_hot.js\` as an anomaly.
+Note: Under the 3-Chair All-VRAM 5-GPU Bandit Policy, 1st Chair \`inkling-2-mini:ud-iq4_xs-dspark\` runs via \`llama-server\` (\`:18080\`, \`krusch-first-chair-inkling\`) on \`kruschdev\`, 2nd Chair \`qwen3-coder-30b-moe:latest\` runs via \`llama-server\` (\`:18080\`, \`krusch-second-chair-qwen30b\`) alongside Ollama \`snowflake-arctic-embed2:latest\` (\`:11434\`) on \`kruschserv\`, and 3rd Chair \`gemma4:e2b\` + \`snowflake-arctic-embed2:latest\` run via Ollama (\`:11434\`, \`keep_alive: -1\`) on \`krusch\`. Do NOT flag pinned \`llama-server\` or Ollama GPU processes or the absence of \`keep_hot.js\` as an anomaly.
 
 1. sentinel: list_systemd_services({ node: '${node}' }) — find failed or dead services
 2. sentinel: get_gpu_stats({ node: '${node}' }) — live GPU VRAM utilization, temperature, and loaded models via nvidia-smi
 3. sentinel: audit_agent_self_state({ node: '${node}' }) — audit AGENTS.md, .env permissions, and GEMINI_INFLIGHT.md for FRAXIS security anomalies
 4. krusch-fs: krusch_fs_search({ query: 'systemd service Restart MemoryMax', node: '${node}', category: 'systemd' }) — inspect indexed systemd unit configs and page warnings
-5. sentinel: get_process_health({ node: '${node}', pattern: 'ollama' }) — verify Ollama runtime process health, CPU usage, and memory state.
+5. sentinel: get_process_health({ node: '${node}', pattern: 'llama-server|ollama' }) — verify llama-server and Ollama runtime process health, CPU usage, and memory state.
 
-Look for: services in 'failed' state, cron jobs that haven't run in months, unexpected non-Ollama GPU processes, world-readable .env files, systemd units missing MemoryMax/Restart limits.`;
+Look for: services in 'failed' state, cron jobs that haven't run in months, unexpected GPU processes outside llama-server and Ollama, world-readable .env files, systemd units missing MemoryMax/Restart limits.`;
 
         case 'system_tuning':
             return `**Goal**: Find subtle system-level optimization opportunities that a human would overlook.

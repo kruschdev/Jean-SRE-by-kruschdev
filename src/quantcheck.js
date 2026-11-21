@@ -864,6 +864,7 @@ export async function runModelCanarySuite(options = {}) {
     const model = String(options.model || '').trim();
     const modality = options.modality || (EMBED_FAMILY_HINT_RE.test(model) ? 'embedding' : 'generative');
     const supportsTools = Boolean(options.supportsTools);
+    const openAiCompat = Boolean(options.openAiCompat);
     const keepAlive = options.keepAlive !== undefined ? options.keepAlive : -1;
     const timeoutMs = options.timeoutMs ?? 45_000;
     const fetchImpl = options.fetchImpl || globalThis.fetch;
@@ -950,27 +951,43 @@ export async function runModelCanarySuite(options = {}) {
     }
 
     const isGemma = /gemma/i.test(model);
+    const chatUrl = openAiCompat ? `${baseUrl}/v1/chat/completions` : `${baseUrl}/api/chat`;
 
     // Probe 1: Code Generation + Repetition Entropy + Sandboxed Execution (`arXiv:2609.05881` core smoke task)
     const tCode0 = performance.now();
     try {
-        const body = {
-            model,
-            stream: false,
-            keep_alive: keepAlive,
-            ...(isGemma ? { think: false } : {}),
-            options: { temperature: 0, seed: 42, num_predict: 220 },
-            messages: [
-                {
-                    role: 'user',
-                    content:
-                        'Write only a plain JavaScript function named clampRange(val, lo, hi) that returns lo if val < lo, hi if val > hi, and val otherwise. Do not include explanations.'
-                }
-            ]
-        };
+        const body = openAiCompat
+            ? {
+                  model,
+                  stream: false,
+                  temperature: 0,
+                  seed: 42,
+                  max_tokens: 512,
+                  messages: [
+                      {
+                          role: 'user',
+                          content:
+                              'Write only a plain JavaScript function named clampRange(val, lo, hi) that returns lo if val < lo, hi if val > hi, and val otherwise. Do not include explanations.'
+                      }
+                  ]
+              }
+            : {
+                  model,
+                  stream: false,
+                  keep_alive: keepAlive,
+                  ...(isGemma ? { think: false } : {}),
+                  options: { temperature: 0, seed: 42, num_predict: 220 },
+                  messages: [
+                      {
+                          role: 'user',
+                          content:
+                              'Write only a plain JavaScript function named clampRange(val, lo, hi) that returns lo if val < lo, hi if val > hi, and val otherwise. Do not include explanations.'
+                      }
+                  ]
+              };
         const resp = await fetchJsonWithTimeout(
             fetchImpl,
-            `${baseUrl}/api/chat`,
+            chatUrl,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -979,9 +996,11 @@ export async function runModelCanarySuite(options = {}) {
             timeoutMs
         );
         const latencyMs = Number((performance.now() - tCode0).toFixed(2));
-        const content = String(resp?.message?.content || '');
+        const content = String(resp?.choices?.[0]?.message?.content ?? resp?.message?.content ?? '');
         if (Number(resp?.eval_count) > 0 && Number(resp?.eval_duration) > 0) {
             throughputTokPerSec = Number(((Number(resp.eval_count) / Number(resp.eval_duration)) * 1e9).toFixed(2));
+        } else if (Number(resp?.timings?.predicted_per_second) > 0) {
+            throughputTokPerSec = Number(Number(resp.timings.predicted_per_second).toFixed(2));
         }
 
         const rep = computeTokenRepetitionMetrics(stripReasoningBlocks(content));
@@ -1013,23 +1032,38 @@ export async function runModelCanarySuite(options = {}) {
     // Probe 2: Structured JSON & Exact Arithmetic Invariant (`17 + 32 = 49`)
     const tJson0 = performance.now();
     try {
-        const body = {
-            model,
-            stream: false,
-            format: 'json',
-            keep_alive: keepAlive,
-            ...(isGemma ? { think: false } : {}),
-            options: { temperature: 0, seed: 42, num_predict: 120 },
-            messages: [
-                {
-                    role: 'user',
-                    content: 'Compute 17 + 32 and return a JSON object with exact keys "sum" (number) and "valid" (boolean true).'
-                }
-            ]
-        };
+        const body = openAiCompat
+            ? {
+                  model,
+                  stream: false,
+                  temperature: 0,
+                  seed: 42,
+                  max_tokens: 384,
+                  response_format: { type: 'json_object' },
+                  messages: [
+                      {
+                          role: 'user',
+                          content: 'Compute 17 + 32 and return a JSON object with exact keys "sum" (number) and "valid" (boolean true).'
+                      }
+                  ]
+              }
+            : {
+                  model,
+                  stream: false,
+                  format: 'json',
+                  keep_alive: keepAlive,
+                  ...(isGemma ? { think: false } : {}),
+                  options: { temperature: 0, seed: 42, num_predict: 120 },
+                  messages: [
+                      {
+                          role: 'user',
+                          content: 'Compute 17 + 32 and return a JSON object with exact keys "sum" (number) and "valid" (boolean true).'
+                      }
+                  ]
+              };
         const resp = await fetchJsonWithTimeout(
             fetchImpl,
-            `${baseUrl}/api/chat`,
+            chatUrl,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1038,7 +1072,7 @@ export async function runModelCanarySuite(options = {}) {
             timeoutMs
         );
         const latencyMs = Number((performance.now() - tJson0).toFixed(2));
-        const cleaned = stripReasoningBlocks(String(resp?.message?.content || ''));
+        const cleaned = stripReasoningBlocks(String(resp?.choices?.[0]?.message?.content ?? resp?.message?.content ?? ''));
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
         const jsonOk = parsed && Number(parsed.sum) === 49 && parsed.valid === true;
@@ -1061,36 +1095,47 @@ export async function runModelCanarySuite(options = {}) {
     if (supportsTools) {
         const tTool0 = performance.now();
         try {
-            const body = {
-                model,
-                stream: false,
-                keep_alive: keepAlive,
-                ...(isGemma ? { think: false } : {}),
-                options: { temperature: 0, seed: 42, num_predict: 160 },
-                tools: [
-                    {
-                        type: 'function',
-                        function: {
-                            name: 'check_disk_space',
-                            description: 'Check free disk space on a mount point',
-                            parameters: {
-                                type: 'object',
-                                properties: { mount: { type: 'string' } },
-                                required: ['mount']
-                            }
+            const toolsPayload = [
+                {
+                    type: 'function',
+                    function: {
+                        name: 'check_disk_space',
+                        description: 'Check free disk space on a mount point',
+                        parameters: {
+                            type: 'object',
+                            properties: { mount: { type: 'string' } },
+                            required: ['mount']
                         }
                     }
-                ],
-                messages: [
-                    {
-                        role: 'user',
-                        content: 'Call check_disk_space for mount "/var/lib/app".'
-                    }
-                ]
-            };
+                }
+            ];
+            const body = openAiCompat
+                ? {
+                      model,
+                      stream: false,
+                      temperature: 0,
+                      seed: 42,
+                      max_tokens: 384,
+                      tools: toolsPayload,
+                      messages: [{ role: 'user', content: 'Call check_disk_space for mount "/var/lib/app".' }]
+                  }
+                : {
+                      model,
+                      stream: false,
+                      keep_alive: keepAlive,
+                      ...(isGemma ? { think: false } : {}),
+                      options: { temperature: 0, seed: 42, num_predict: 160 },
+                      tools: toolsPayload,
+                      messages: [
+                          {
+                              role: 'user',
+                              content: 'Call check_disk_space for mount "/var/lib/app".'
+                          }
+                      ]
+                  };
             const resp = await fetchJsonWithTimeout(
                 fetchImpl,
-                `${baseUrl}/api/chat`,
+                chatUrl,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1099,7 +1144,7 @@ export async function runModelCanarySuite(options = {}) {
                 timeoutMs
             );
             const latencyMs = Number((performance.now() - tTool0).toFixed(2));
-            const toolCalls = resp?.message?.tool_calls;
+            const toolCalls = resp?.choices?.[0]?.message?.tool_calls ?? resp?.message?.tool_calls;
             let toolOk = false;
             let detail = 'No tool_calls emitted';
 
@@ -1175,10 +1220,42 @@ export async function auditOllamaEndpointQuantization(options = {}) {
     const fetchImpl = options.fetchImpl || globalThis.fetch;
 
     try {
-        const [tagsResp, psResp] = await Promise.all([
-            fetchJsonWithTimeout(fetchImpl, `${baseUrl}/api/tags`, {}, timeoutMs),
-            fetchJsonWithTimeout(fetchImpl, `${baseUrl}/api/ps`, {}, timeoutMs)
-        ]);
+        let tagsResp = null;
+        let psResp = null;
+        let openAiCompat = false;
+        try {
+            [tagsResp, psResp] = await Promise.all([
+                fetchJsonWithTimeout(fetchImpl, `${baseUrl}/api/tags`, {}, timeoutMs),
+                fetchJsonWithTimeout(fetchImpl, `${baseUrl}/api/ps`, {}, timeoutMs)
+            ]);
+        } catch (primaryErr) {
+            if (!/HTTP 404/i.test(String(primaryErr?.message || ''))) {
+                throw primaryErr;
+            }
+            openAiCompat = true;
+            const v1Models = await fetchJsonWithTimeout(fetchImpl, `${baseUrl}/v1/models`, {}, timeoutMs);
+            const v1Data = Array.isArray(v1Models?.data) ? v1Models.data : [];
+            const mapped = v1Data.map((entry) => {
+                const id = String(entry?.id || '');
+                const ftype = String(entry?.meta?.ftype || '').split(' ')[0] || 'GGUF';
+                const nParams = Number(entry?.meta?.n_params || 0);
+                const sizeBytes = Number(entry?.meta?.size || 0) || null;
+                return {
+                    name: id,
+                    model: id,
+                    size: sizeBytes,
+                    size_vram: sizeBytes,
+                    capabilities: ['completion', 'tools'],
+                    details: {
+                        quantization_level: ftype,
+                        parameter_size: nParams > 0 ? `${(nParams / 1e9).toFixed(1)}B` : null,
+                        family: entry?.owned_by || 'llamacpp'
+                    }
+                };
+            });
+            tagsResp = { models: mapped };
+            psResp = { models: mapped };
+        }
 
         const installedModels = Array.isArray(tagsResp?.models) ? tagsResp.models : [];
         const residentModels = Array.isArray(psResp?.models) ? psResp.models : [];
@@ -1203,19 +1280,23 @@ export async function auditOllamaEndpointQuantization(options = {}) {
             const isResident = Boolean(residentEntry);
 
             let showInfo = {};
-            try {
-                showInfo = await fetchJsonWithTimeout(
-                    fetchImpl,
-                    `${baseUrl}/api/show`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ model: name })
-                    },
-                    timeoutMs
-                );
-            } catch {
-                showInfo = {};
+            if (!openAiCompat) {
+                try {
+                    showInfo = await fetchJsonWithTimeout(
+                        fetchImpl,
+                        `${baseUrl}/api/show`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ model: name })
+                        },
+                        timeoutMs
+                    );
+                } catch {
+                    showInfo = {};
+                }
+            } else {
+                showInfo = { capabilities: m.capabilities || ['completion', 'tools'], template: '{{ .Prompt }}' };
             }
 
             const details = { ...(m.details || {}), ...(showInfo.details || {}) };
@@ -1226,6 +1307,7 @@ export async function auditOllamaEndpointQuantization(options = {}) {
                 families: details.families || (details.family ? [details.family] : []),
                 capabilities: showInfo.capabilities || [],
                 template: typeof showInfo.template === 'string' ? showInfo.template : undefined,
+                hasImatrix: openAiCompat && /iq4_xs|ud-/i.test(`${name} ${details.quantization_level || ''}`) ? true : undefined,
                 isResident,
                 sizeBytes: residentEntry?.size ?? m.size ?? null,
                 sizeVramBytes: residentEntry?.size_vram ?? null
@@ -1239,6 +1321,7 @@ export async function auditOllamaEndpointQuantization(options = {}) {
                     model: name,
                     modality: riskProfile.modality,
                     supportsTools: riskProfile.supportsTools,
+                    openAiCompat,
                     keepAlive: unloadTargetAfter && targetModel === name ? 0 : -1,
                     timeoutMs,
                     fetchImpl

@@ -27,14 +27,14 @@ try {
 const PERSONA_CONFIG = resolveModelConfig('persona', config);
 const EXECUTOR_CONFIG = resolveModelConfig('executor', config);
 
-const THINKER_MODEL = envOr('PERSONA_MODEL', PERSONA_CONFIG.model, 'qwen3-coder-30b-moe:latest');
-const WORKER_MODEL = envOr('EXECUTOR_MODEL', EXECUTOR_CONFIG.model, 'gemma4:e4b');
+const THINKER_MODEL = envOr('PERSONA_MODEL', PERSONA_CONFIG.model, 'inkling-2-mini:ud-iq4_xs-dspark');
+const WORKER_MODEL = envOr('EXECUTOR_MODEL', EXECUTOR_CONFIG.model, 'inkling-2-mini:ud-iq4_xs-dspark');
 
 const thinkerNodeName = config.tasks?.persona?.node || 'kruschdev';
 const thinkerNode = config.nodes?.[thinkerNodeName]?.name || 'Dual RTX 2080 Ti NVLink';
 
-const workerNodeName = config.tasks?.executor?.node || 'kruschserv';
-const workerNode = config.nodes?.[workerNodeName]?.name || 'Dual RTX 3060';
+const workerNodeName = config.tasks?.executor?.node || 'kruschdev';
+const workerNode = config.nodes?.[workerNodeName]?.name || 'Dual RTX 2080 Ti NVLink';
 
 import { 
     HOMELAB_CONTEXT, 
@@ -2723,7 +2723,7 @@ function distillTeacherKnowledgeForStudent(projectPath, { teacherModel = 'gpt-os
         project,
         teacherModel,
         distilledAt: new Date().toISOString(),
-        studentTarget: 'qwen3-coder-30b-moe:latest',
+        studentTarget: THINKER_MODEL,
         refutedFalsePositives: [...refutedSet].slice(0, 8),
         lessonsLearned: [...lessonSet].slice(0, 4),
         verifiedBacklog: cards,
@@ -3380,7 +3380,7 @@ async function saveAuditCheckpoint(targetProject, phase, reply, { isColabBurst =
             }
             if (isColabBurst || phase === '2_MASTER_BACKLOG' || !fs.existsSync(join(auditDir, 'teacher_120b_distilled.json'))) {
                 distillTeacherKnowledgeForStudent(projectPath, {
-                    teacherModel: isColabBurst ? 'gpt-oss:120b' : 'qwen3-coder-30b-moe:latest',
+                    teacherModel: isColabBurst ? 'gpt-oss:120b' : THINKER_MODEL,
                     extraToolCommands
                 });
                 if (phase === '2_MASTER_BACKLOG') {

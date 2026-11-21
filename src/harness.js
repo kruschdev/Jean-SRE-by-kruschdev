@@ -9,7 +9,7 @@ import { dirname, join } from 'path';
 import os from 'os';
 import { verifyToolCompliance } from './compliance.js';
 import { HOMELAB_CONTEXT } from './prompts.js';
-
+import { computeJeanTurnDifficulty, hydrateJeanPersistentState, commitJeanStateTransition, registerJeanStateRoutes } from './state-graph.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const projectRoot = join(__dirname, '..');
@@ -17,8 +17,8 @@ const HOMELAB_ROOT = envOr('HOMELAB_PATH', null, join(os.homedir(), 'homelab'));
 
 export const DEFAULT_HARNESS_CONFIG = {
     models: {
-        persona: { provider: 'ollama', model: 'qwen3-coder-30b-moe:latest' },
-        executor: { provider: 'ollama', model: 'gemma4:e4b' },
+        persona: { provider: 'three-chair', model: 'inkling-2-mini:ud-iq4_xs-dspark' },
+        executor: { provider: 'three-chair', model: 'inkling-2-mini:ud-iq4_xs-dspark' },
     },
 };
 
@@ -52,20 +52,20 @@ const config = await loadSafeHarnessConfig(projectRoot);
 const PERSONA_CONFIG = resolveModelConfig('persona', config);
 const EXECUTOR_CONFIG = resolveModelConfig('executor', config);
 
-const PERSONA_MODEL = envOr('PERSONA_MODEL', PERSONA_CONFIG.model, 'qwen3-coder-30b-moe:latest');
-const PERSONA_PROVIDER = envOr('PERSONA_PROVIDER', PERSONA_CONFIG.provider, 'ollama');
+const PERSONA_MODEL = envOr('PERSONA_MODEL', PERSONA_CONFIG.model, 'inkling-2-mini:ud-iq4_xs-dspark');
+const PERSONA_PROVIDER = envOr('PERSONA_PROVIDER', PERSONA_CONFIG.provider, 'three-chair');
 const PERSONA_OLLAMA_URL = envOr(
     'PERSONA_OLLAMA_URL',
     PERSONA_CONFIG.apiUrl ? new URL(PERSONA_CONFIG.apiUrl).origin : undefined,
-    'http://localhost:11434'
+    'http://127.0.0.1:18080'
 );
 
-const EXECUTOR_MODEL = envOr('EXECUTOR_MODEL', EXECUTOR_CONFIG.model, 'gemma4:e4b');
-const EXECUTOR_PROVIDER = envOr('EXECUTOR_PROVIDER', EXECUTOR_CONFIG.provider, 'ollama');
+const EXECUTOR_MODEL = envOr('EXECUTOR_MODEL', EXECUTOR_CONFIG.model, 'inkling-2-mini:ud-iq4_xs-dspark');
+const EXECUTOR_PROVIDER = envOr('EXECUTOR_PROVIDER', EXECUTOR_CONFIG.provider, 'three-chair');
 const EXECUTOR_OLLAMA_URL = envOr(
     'EXECUTOR_OLLAMA_URL',
     EXECUTOR_CONFIG.apiUrl ? new URL(EXECUTOR_CONFIG.apiUrl).origin : undefined,
-    'http://127.0.0.1:11434'
+    'http://127.0.0.1:18080'
 );
 
 // Synchronize resolved configs with env overrides
@@ -117,8 +117,8 @@ export async function resolveOpportunisticPersonaConfig({ isSweepPrompt = false,
             isColabBurst: false,
             baseUrl: PERSONA_OLLAMA_URL,
             model: PERSONA_MODEL,
-            maxPromptChars: isSweepPrompt ? 32000 : 20000,
-            maxTokens: 3072,
+            maxPromptChars: isSweepPrompt ? 48000 : 32000,
+            maxTokens: 6144,
             config: PERSONA_CONFIG
         };
     }
@@ -183,8 +183,8 @@ export async function resolveOpportunisticPersonaConfig({ isSweepPrompt = false,
         isColabBurst: false,
         baseUrl: PERSONA_OLLAMA_URL,
         model: PERSONA_MODEL,
-        maxPromptChars: isSweepPrompt ? 32000 : 20000,
-        maxTokens: 3072,
+        maxPromptChars: isSweepPrompt ? 48000 : 32000,
+        maxTokens: 6144,
         config: PERSONA_CONFIG
     };
 }
@@ -238,7 +238,7 @@ When hardware sweeps indicate high thermal load, VRAM saturation, or crashed con
 4. \`krusch-context-remember\` to persist performance optimizations and root-cause solutions.`;
 
 const supportsNativeTools = (modelName) => {
-    if (modelName.includes('qwen3') || modelName.includes('moe')) return false;
+    if (EXECUTOR_PROVIDER !== 'three-chair' && !EXECUTOR_OLLAMA_URL.includes(':1808') && (modelName.includes('qwen3') || modelName.includes('moe'))) return false;
     return true;
 };
 
@@ -506,54 +506,48 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
     // ── Fast-path for stateless one-shot synthesis (noTools: true) ──
     if (noTools) {
         const isSweepPrompt = /^\s*##\s*(?:🛑\s*)?JEAN\b/i.test(userMessage || '');
+        const diffMeta = computeJeanTurnDifficulty(userMessage, { isSweepPrompt });
+        const graphState = await hydrateJeanPersistentState({ targetProject: diffMeta.targetProject, query: userMessage });
         const personaTarget = await resolveOpportunisticPersonaConfig({ isSweepPrompt });
-        console.log(`[Persona] Executing direct one-shot prompt via ${personaTarget.model}${personaTarget.isColabBurst ? ' [⚡ COLAB G4 PIGGYBACK — 0 EXTRA CUs]' : ''} (noTools=true)...`);
-        const liveStateBrief = isSweepPrompt ? '' : buildLiveAuditStateBrief();
+        console.log(`[Persona] Cascade (${diffMeta.difficultyBand}=${diffMeta.complexityScore}) for ${diffMeta.targetProject}[${diffMeta.phase}]${personaTarget.isColabBurst ? ' [⚡ COLAB G4]' : ''}...`);
+        const liveStateBrief = [isSweepPrompt ? '' : buildLiveAuditStateBrief(), graphState.promptBlock].filter(Boolean).join('\n\n');
         const personaSystemPrompt = isSweepPrompt
-            ? JEAN_SYNTHESIS_SYSTEM_PROMPT
+            ? [JEAN_SYNTHESIS_SYSTEM_PROMPT, graphState.promptBlock].filter(Boolean).join('\n\n')
             : `${JEAN_CONSULT_SYSTEM_PROMPT}\n\n${HOMELAB_CONTEXT}\n\n${liveStateBrief}`.trim();
 
         const prunedMessage = prunePromptForContext(userMessage, personaTarget.maxPromptChars);
-
         const synthesisMessages = [
             { role: 'system', content: personaSystemPrompt },
             { role: 'user', content: prunedMessage }
         ];
-
         let finalResponse;
         let usedColabTeacher = personaTarget.isColabBurst;
         try {
-            console.log(`[DEBUG] Calling chat() with ${synthesisMessages.length} messages (${prunedMessage.length} chars). Model: ${personaTarget.model}, URL: ${personaTarget.config.apiUrl}`);
+            console.log(`[DEBUG] Calling chat() (${prunedMessage.length} chars, provider=${personaTarget.config.provider}, complexity=${diffMeta.complexityScore})`);
             finalResponse = await chat(
                 null,
                 null,
-                {
-                    ...personaTarget.config,
-                    temperature: 0.2,
-                    maxTokens: personaTarget.maxTokens
-                },
-                {
-                    returnFullResponse: true,
-                    messages: sanitizeMessagesForOllama(synthesisMessages)
-                }
+                { ...personaTarget.config, temperature: 0.2, maxTokens: personaTarget.maxTokens },
+                { returnFullResponse: true, complexityScore: diffMeta.complexityScore, messages: sanitizeMessagesForOllama(synthesisMessages) }
             );
-            console.log(`[DEBUG] chat() returned successfully.`);
+            console.log(`[DEBUG] chat() returned via ${finalResponse.routedModel || personaTarget.model}.`);
         } catch (e) {
             if (personaTarget.isColabBurst) {
                 usedColabTeacher = false;
                 console.warn(`[Persona] Colab G4 tunnel unreachable mid-request (${e.message}). Falling back to local ${PERSONA_MODEL}...`);
                 invalidateColabBurstCache();
-                const fallbackPruned = prunePromptForContext(userMessage, isSweepPrompt ? 32000 : 20000);
+                const fallbackPruned = prunePromptForContext(userMessage, isSweepPrompt ? 48000 : 32000);
                 finalResponse = await chat(
                     null,
                     null,
                     {
                         ...PERSONA_CONFIG,
                         temperature: 0.2,
-                        maxTokens: 3072
+                        maxTokens: 6144
                     },
                     {
                         returnFullResponse: true,
+                        complexityScore: diffMeta.complexityScore,
                         messages: sanitizeMessagesForOllama([
                             { role: 'system', content: personaSystemPrompt },
                             { role: 'user', content: fallbackPruned }
@@ -565,7 +559,6 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
                 throw new Error(`Persona LLM Error: ${e.message}`);
             }
         }
-
         if (usedColabTeacher && finalResponse?.text) {
             recordTeacherSftTurn({
                 model: personaTarget.model,
@@ -574,7 +567,7 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
                 assistantReply: finalResponse.text
             });
         }
-
+        await commitJeanStateTransition({ targetProject: diffMeta.targetProject, phase: diffMeta.phase, reply: finalResponse?.text || '', routedTierId: finalResponse?.routedTierId, routedModel: finalResponse?.routedModel || personaTarget.model, complexityScore: diffMeta.complexityScore, difficultyBand: diffMeta.difficultyBand });
         return finalResponse.text || '';
     }
 
@@ -899,8 +892,10 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
 
     // Always append the tracking directive as a NEW user message at the very end of the context!
     // This ensures it executes even if the executor loop exhausts all turns.
+    const synthDiff = computeJeanTurnDifficulty(userMessage, { forceArchitect: requiresPhase2 });
+    const synthGraph = await hydrateJeanPersistentState({ targetProject: synthDiff.targetProject, query: userMessage });
     const personaTarget = await resolveOpportunisticPersonaConfig({ isSweepPrompt: false });
-    console.log(`[Persona] Requesting final synthesis from ${personaTarget.model}${personaTarget.isColabBurst ? ' [⚡ COLAB G4 PIGGYBACK — 0 EXTRA CUs]' : ''}...`);
+    console.log(`[Persona] Requesting final synthesis (${synthDiff.difficultyBand}=${synthDiff.complexityScore})${personaTarget.isColabBurst ? ' [⚡ COLAB G4]' : ''}...`);
     
     // Create a synthesis prompt
     let synthesisMessages = [...messages];
@@ -910,15 +905,15 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
         content: `Please synthesize the findings from the tool executions above and provide the final professional response.`
     });
     
-    // Ensure the system prompt for Qwen Coder 7B focuses on synthesis AND strict state tracking
+    // Ensure the system prompt focuses on synthesis, HydraDB SelfGraph state, AND strict state tracking
     if (synthesisMessages.length > 0 && synthesisMessages[0].role === 'system') {
-        const synthesisDirective = `${JEAN_BASE_PERSONA} A background execution engine has gathered raw telemetry and data via tools. Review the conversation and tool outputs, specifically hunting for structural drift, configuration entropy, and deviations from the optimal baseline. By constantly asking "how" and "why" state has drifted, uncover ways to harden systems. Provide a professional, precise, and analytical response. Do not attempt to use tools.`;
+        const synthesisDirective = `${JEAN_BASE_PERSONA}${synthGraph.promptBlock ? `\n\n${synthGraph.promptBlock}` : ''} A background execution engine has gathered raw telemetry and data via tools. Review the conversation and tool outputs, specifically hunting for structural drift, configuration entropy, and deviations from the optimal baseline. By constantly asking "how" and "why" state has drifted, uncover ways to harden systems. Provide a professional, precise, and analytical response. Do not attempt to use tools.`;
         synthesisMessages[0].content = `${synthesisDirective}\n\nCRITICAL STATE TRACKING: At the very end of your response, you MUST include a state block formatted exactly like this:\n### JEAN_INFLIGHT\n- **Current Focus:** [what you are monitoring]\n- **Next Cycle Goal:** [what you plan to do next 10m]\n- **Pending Issues:** [any unresolved anomalies]`;
     }
 
     let finalResponse;
     try {
-        console.log(`[DEBUG] Calling chat() with ${synthesisMessages.length} messages. Model: ${personaTarget.model}, URL: ${personaTarget.config.apiUrl}`);
+        console.log(`[DEBUG] Calling chat() with ${synthesisMessages.length} messages (complexity=${synthDiff.complexityScore}).`);
         finalResponse = await chat(
             null, 
             null, 
@@ -929,10 +924,11 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
             },
             {
                 returnFullResponse: true,
+                complexityScore: synthDiff.complexityScore,
                 messages: sanitizeMessagesForOllama(synthesisMessages)
             }
         );
-        console.log(`[DEBUG] chat() returned successfully.`);
+        console.log(`[DEBUG] chat() returned via ${finalResponse.routedModel || personaTarget.model}.`);
     } catch (e) {
         if (personaTarget.isColabBurst) {
             console.warn(`[Persona] Colab G4 tunnel unreachable mid-request (${e.message}). Falling back to local ${PERSONA_MODEL}...`);
@@ -943,10 +939,11 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
                 {
                     ...PERSONA_CONFIG,
                     temperature: 0.2,
-                    maxTokens: 2048
+                    maxTokens: 4096
                 },
                 {
                     returnFullResponse: true,
+                    complexityScore: synthDiff.complexityScore,
                     messages: sanitizeMessagesForOllama(synthesisMessages)
                 }
             );
@@ -960,6 +957,15 @@ export async function chatTurn(conversationId, userMessage, { noTools = false } 
         role: 'assistant',
         content: finalResponse.text || ''
     };
+    await commitJeanStateTransition({
+        targetProject: synthDiff.targetProject,
+        phase: synthDiff.phase,
+        reply: finalMsg.content,
+        routedTierId: finalResponse.routedTierId,
+        routedModel: finalResponse.routedModel || personaTarget.model,
+        complexityScore: synthDiff.complexityScore,
+        difficultyBand: synthDiff.difficultyBand
+    });
     
     messages.push(finalMsg);
 
@@ -1207,5 +1213,6 @@ if (isMainModule) {
         });
         server.keepAliveTimeout = 65_000;
         server.headersTimeout = 66_000;
+        registerJeanStateRoutes(app, requireJeanAuth);
     }
 }
