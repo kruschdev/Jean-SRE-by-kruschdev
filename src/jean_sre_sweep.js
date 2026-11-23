@@ -1265,7 +1265,10 @@ function runProjectDependencyGraph(rawTarget, projectPath) {
 }
 
 function parseMcpToolAction(rawAction, projectPath, reasonText) {
-    const mcpRegex = /\b(krusch_context_retrieve|krusch_context_nudge|krusch_context_health|krusch_fs_search|krusch_fs_locate|krusch_fs_page_tree|krusch_fs_read_page|krusch_git_semantic_search|krusch_git_file_symbols|krusch_git_read_blob|krusch_git_read_tree|krusch_git_list_repos|query_design_rules|analyze_layout_structure|get_canonical_template|list_canonical_templates)\b/i;
+    // Anchor MCP tool detection to the action verb head so symbol/grep queries referencing MCP tool names
+    // (e.g. `search_symbols krusch_git_read_blob` or `run_shell_command grep ... krusch_git_read_blob`)
+    // are never misparsed as direct MCP invocations with empty required arguments.
+    const mcpRegex = /^(?:\s*(?:[-*]|\d+\.)\s*)?(?:\*\*\s*(?:Action|Tool)\s*\*\*\s*:?\s*|(?:Action|Tool)\s*:\s*)?(?:tool\s+call\s+)?[\[`'"*\s]*(krusch_context_retrieve|krusch_context_nudge|krusch_context_health|krusch_fs_search|krusch_fs_locate|krusch_fs_page_tree|krusch_fs_read_page|krusch_git_semantic_search|krusch_git_file_symbols|krusch_git_read_blob|krusch_git_read_tree|krusch_git_list_repos|query_design_rules|analyze_layout_structure|get_canonical_template|list_canonical_templates)\b/i;
     const match = rawAction.match(mcpRegex);
     if (!match) return null;
 
@@ -1332,6 +1335,12 @@ function parseMcpToolAction(rawAction, projectPath, reasonText) {
     }
     if (baseName.startsWith('krusch_git_') && !toolArgs.repo && !toolArgs.project) {
         toolArgs.repo = defaultRepo;
+    }
+    if ((baseName === 'krusch_git_file_symbols' || baseName === 'krusch_git_read_blob') && !toolArgs.file_path && !toolArgs.blob_id) {
+        const aliasedPath = toolArgs.path || toolArgs.filePath || '';
+        if (aliasedPath) {
+            toolArgs.file_path = aliasedPath;
+        }
     }
     if (baseName.startsWith('krusch_context_') && !toolArgs.project && !toolArgs.active_project && defaultRepo) {
         toolArgs.project = defaultRepo;
@@ -1615,6 +1624,28 @@ function classifyIntentRisk(task, parsedAction = null) {
     return { riskClass: 'L2', reason: 'Safe read-only diagnostics/telemetry retrieval' };
 }
 
+const _unindexedGitRepos = new Set();
+
+function normalizeGitRepoCacheKey(repoArg) {
+    return String(repoArg || '').trim().toLowerCase();
+}
+
+function isKnownUnindexedGitRepo(repoArg) {
+    const k = normalizeGitRepoCacheKey(repoArg);
+    return Boolean(k && _unindexedGitRepos.has(k));
+}
+
+function recordUnindexedGitRepoResponse(repoArg, resText) {
+    const raw = String(resText || '');
+    const m = raw.match(/Repository\s+['"]?([A-Za-z0-9_./@-]+)['"]?\s+not\s+found/i);
+    if (m && m[1]) {
+        _unindexedGitRepos.add(normalizeGitRepoCacheKey(m[1]));
+        if (repoArg) _unindexedGitRepos.add(normalizeGitRepoCacheKey(repoArg));
+        return true;
+    }
+    return false;
+}
+
 /**
  * Execute a verified L2 read-only intent inline and return captured output.
  */
@@ -1623,12 +1654,15 @@ async function executeSafeIntentInline(parsedAction, projectPath = HOMELAB_ROOT)
         if (parsedAction.kind === 'sentinel_tool' || parsedAction.kind === 'mcp_tool') {
             const tName = String(parsedAction.toolName || '');
             const tArgs = parsedAction.toolArgs || {};
+            const repoArg = tArgs.repo || basename(projectPath || '');
+            const skipUnindexedGitMcp = isKnownUnindexedGitRepo(repoArg);
 
             // 1. krusch_git_file_symbols: always hydrate live AST symbol ranges + implementation previews from disk alongside MCP response
             if (tName.includes('file-symbols')) {
                 const localAstSymbols = runProjectFileSymbols(tArgs.file_path || tArgs.path || '', projectPath);
-                const mcpRes = await callTool(tName, tArgs, { timeout: 15000 });
-                const cleanMcp = (!String(mcpRes || '').startsWith('[Failed:') && !String(mcpRes || '').includes('No symbols found'))
+                const mcpRes = skipUnindexedGitMcp ? '' : await callTool(tName, tArgs, { timeout: 15000 });
+                recordUnindexedGitRepoResponse(repoArg, mcpRes);
+                const cleanMcp = (mcpRes && !String(mcpRes).startsWith('[Failed:') && !String(mcpRes).includes('No symbols found') && !String(mcpRes).includes('not found'))
                     ? `${String(mcpRes).trim()}\n\n`
                     : '';
                 return {
@@ -1639,9 +1673,10 @@ async function executeSafeIntentInline(parsedAction, projectPath = HOMELAB_ROOT)
 
             // 1b. krusch_git_semantic_search: fallback to local symbol + keyword search if repo not yet indexed or 0 PG hits
             if (tName.includes('semantic-search')) {
-                const mcpRes = await callTool(tName, tArgs, { timeout: 25000 });
+                const mcpRes = skipUnindexedGitMcp ? '' : await callTool(tName, tArgs, { timeout: 25000 });
+                recordUnindexedGitRepoResponse(repoArg, mcpRes);
                 const resStr = String(mcpRes || '');
-                const isFailedOrEmpty = resStr.startsWith('[Failed:') || resStr.startsWith('Error:') || resStr.includes('not found') || resStr.includes('No matching code') || resStr.length < 40;
+                const isFailedOrEmpty = !resStr || resStr.startsWith('[Failed:') || resStr.startsWith('Error:') || resStr.includes('not found') || resStr.includes('No matching code') || resStr.length < 40;
                 if (!isFailedOrEmpty) {
                     return { ok: true, output: resStr.slice(0, 5500) };
                 }
@@ -1654,8 +1689,9 @@ async function executeSafeIntentInline(parsedAction, projectPath = HOMELAB_ROOT)
 
             // 2. krusch_git_read_blob / krusch_git_read_tree: fallback to on-disk file/tree if PG DAG is not yet synced
             if (tName.includes('read-blob') || tName.includes('read-tree')) {
-                const mcpRes = await callTool(tName, tArgs, { timeout: 20000 });
-                const isFailed = String(mcpRes || '').startsWith('[Failed:') || String(mcpRes || '').startsWith('Error:') || String(mcpRes || '').length < 40;
+                const mcpRes = skipUnindexedGitMcp ? '' : await callTool(tName, tArgs, { timeout: 20000 });
+                recordUnindexedGitRepoResponse(repoArg, mcpRes);
+                const isFailed = !mcpRes || String(mcpRes).startsWith('[Failed:') || String(mcpRes).startsWith('Error:') || String(mcpRes).includes('not found') || String(mcpRes).length < 40;
                 if (!isFailed) {
                     return { ok: true, output: String(mcpRes).slice(0, 5500) };
                 }
@@ -4304,6 +4340,8 @@ export {
     computeProjectSourceSignature,
     markProjectConverged,
     isProjectConverged,
+    isKnownUnindexedGitRepo,
+    recordUnindexedGitRepoResponse,
     loadLocalSweepExtension,
     shutdownController
 };

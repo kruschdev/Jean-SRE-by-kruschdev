@@ -17,7 +17,9 @@ import {
     loadHomelabBaselineRules,
     buildPendingIssueCodeEvidence,
     readInflight,
-    computeProjectSourceSignature
+    computeProjectSourceSignature,
+    isKnownUnindexedGitRepo,
+    recordUnindexedGitRepoResponse
 } from './jean_sre_sweep.js';
 
 test('Sweep Unit Tests - parseExecutableAction', async (t) => {
@@ -85,6 +87,44 @@ test('Sweep Unit Tests - parseExecutableAction', async (t) => {
         assert.equal(gitSem.toolName, 'krusch-git-krusch-git-semantic-search');
         assert.equal(gitSem.toolArgs.repo, 'jean-sre');
         assert.equal(classifyIntentRisk(gitSemStr, gitSem).riskClass, 'L2');
+
+        // Regression: symbol/dependency/shell queries mentioning MCP tool names must NOT be hijacked into empty MCP invocations
+        const symMention = parseExecutableAction(
+            '1. **Action**: `search_symbols` `krusch_git_read_blob` **Reason**: Locate read_blob implementation.',
+            '/home/krusch/homelab/projects/krusch-git'
+        );
+        assert.equal(symMention.kind, 'search_symbols');
+        assert.equal(symMention.query, 'krusch_git_read_blob');
+
+        const depMention = parseExecutableAction(
+            '2. **Action**: `dependency_graph` `krusch_git_read_blob` **Reason**: Trace callers.',
+            '/home/krusch/homelab/projects/krusch-git'
+        );
+        assert.equal(depMention.kind, 'dependency_graph');
+        assert.equal(depMention.target, 'krusch_git_read_blob');
+
+        const grepMention = parseExecutableAction(
+            '3. **Action**: `run_shell_command` `grep -rn "krusch_git_read_blob" server/` **Reason**: Find references.',
+            '/home/krusch/homelab/projects/krusch-git'
+        );
+        assert.equal(grepMention.kind, 'run_shell_command');
+        assert.equal(grepMention.shellCommand, 'grep -rn "krusch_git_read_blob" server/');
+
+        // Direct MCP invocation whose argument mentions search_symbols must still parse as MCP tool, and alias path -> file_path
+        const mcpWithSymArg = parseExecutableAction(
+            '4. **Action**: `krusch_git_semantic_search({ repo: "jean-sre", query: "search_symbols" })` **Reason**: Semantic lookup.',
+            '/home/krusch/homelab/projects/jean-sre'
+        );
+        assert.equal(mcpWithSymArg.kind, 'mcp_tool');
+        assert.equal(mcpWithSymArg.toolName, 'krusch-git-krusch-git-semantic-search');
+
+        const blobAlias = parseExecutableAction(
+            '5. **Action**: `krusch_git_read_blob({ repo: "krusch-git", path: "server/mcp.js" })` **Reason**: Read blob.',
+            '/home/krusch/homelab/projects/krusch-git'
+        );
+        assert.equal(blobAlias.kind, 'mcp_tool');
+        assert.equal(blobAlias.toolName, 'krusch-git-krusch-git-read-blob');
+        assert.equal(blobAlias.toolArgs.file_path, 'server/mcp.js');
     });
 });
 
@@ -347,6 +387,15 @@ test('Sweep Unit Tests - Python AST Indexing, Spec Brief & Cross-Project Refutat
         const sig2 = computeProjectSourceSignature(jeanSrePath);
         assert.equal(sig1.length, 24);
         assert.equal(sig1, sig2);
+    });
+
+    await t.test('recordUnindexedGitRepoResponse caches MCP -32602 repository-not-found misses', () => {
+        assert.equal(isKnownUnindexedGitRepo('unindexed-demo-repo'), false);
+        assert.equal(
+            recordUnindexedGitRepoResponse('unindexed-demo-repo', "MCP error -32602: Repository 'unindexed-demo-repo' not found."),
+            true
+        );
+        assert.equal(isKnownUnindexedGitRepo('UNINDEXED-DEMO-REPO'), true);
     });
 });
 
