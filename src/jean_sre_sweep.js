@@ -1659,8 +1659,16 @@ async function executeSafeIntentInline(parsedAction, projectPath = HOMELAB_ROOT)
 
             // 1. krusch_git_file_symbols: always hydrate live AST symbol ranges + implementation previews from disk alongside MCP response
             if (tName.includes('file-symbols')) {
-                const localAstSymbols = runProjectFileSymbols(tArgs.file_path || tArgs.path || '', projectPath);
-                const mcpRes = skipUnindexedGitMcp ? '' : await callTool(tName, tArgs, { timeout: 15000 });
+                const targetFp = String(tArgs.file_path || tArgs.path || '').trim();
+                if (!targetFp) {
+                    const files = listProjectFiles(projectPath, projectPath, 0, 4, 80);
+                    return {
+                        ok: true,
+                        output: `[Fallback Project Tree for ${projectPath} — missing file_path for file_symbols]\n${files.join('\n')}`.slice(0, 5500)
+                    };
+                }
+                const localAstSymbols = runProjectFileSymbols(targetFp, projectPath);
+                const mcpRes = skipUnindexedGitMcp ? '' : await callTool(tName, { ...tArgs, file_path: targetFp }, { timeout: 15000 });
                 recordUnindexedGitRepoResponse(repoArg, mcpRes);
                 const cleanMcp = (mcpRes && !String(mcpRes).startsWith('[Failed:') && !String(mcpRes).includes('No symbols found') && !String(mcpRes).includes('not found'))
                     ? `${String(mcpRes).trim()}\n\n`
@@ -1689,6 +1697,15 @@ async function executeSafeIntentInline(parsedAction, projectPath = HOMELAB_ROOT)
 
             // 2. krusch_git_read_blob / krusch_git_read_tree: fallback to on-disk file/tree if PG DAG is not yet synced
             if (tName.includes('read-blob') || tName.includes('read-tree')) {
+                const relFp = String(tArgs.file_path || tArgs.path || '').replace(/^\/+/, '').trim();
+                const hasBlobTarget = Boolean(relFp || String(tArgs.blob_id || '').trim());
+                if (tName.includes('read-blob') && !hasBlobTarget) {
+                    const files = listProjectFiles(projectPath, projectPath, 0, 4, 80);
+                    return {
+                        ok: true,
+                        output: `[Fallback Project Tree for ${projectPath} — missing file_path/blob_id for read_blob]\n${files.join('\n')}`.slice(0, 5500)
+                    };
+                }
                 const mcpRes = skipUnindexedGitMcp ? '' : await callTool(tName, tArgs, { timeout: 20000 });
                 recordUnindexedGitRepoResponse(repoArg, mcpRes);
                 const isFailed = !mcpRes || String(mcpRes).startsWith('[Failed:') || String(mcpRes).startsWith('Error:') || String(mcpRes).includes('not found') || String(mcpRes).length < 40;
@@ -1699,7 +1716,6 @@ async function executeSafeIntentInline(parsedAction, projectPath = HOMELAB_ROOT)
                     const files = listProjectFiles(projectPath, projectPath, 0, 4, 80);
                     return { ok: true, output: `[Fallback Project Tree for ${projectPath}]\n${files.join('\n')}` };
                 }
-                const relFp = String(tArgs.file_path || tArgs.path || '').replace(/^\/+/, '');
                 const fullFp = relFp.startsWith('/') ? relFp : join(projectPath, relFp);
                 if (fs.existsSync(fullFp) && fs.statSync(fullFp).isFile()) {
                     const allLines = fs.readFileSync(fullFp, 'utf8').split('\n');
@@ -4310,6 +4326,7 @@ function handleShutdown(signal) {
 
 export {
     parseExecutableAction,
+    executeSafeIntentInline,
     classifyIntentRisk,
     checkIntentDrift,
     parseMasterBacklogCards,

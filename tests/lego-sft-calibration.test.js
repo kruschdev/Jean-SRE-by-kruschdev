@@ -21,6 +21,7 @@ import {
     buildProjectLegoBoilerplateBrief,
     appendLegoScoutBacklogEntry,
     parseExecutableAction,
+    executeSafeIntentInline,
     parseMasterBacklogCards
 } from '../src/jean_sre_sweep.js';
 
@@ -827,6 +828,28 @@ print(json.dumps({"ok": True, "spans": len(spans), "meta": meta}))
         ].join('\n');
 
         assert.deepEqual(parseMasterBacklogCards(allRefutedBacklog), []);
+    });
+
+    test('executeSafeIntentInline guards missing file_path/blob_id on krusch_git read_blob and file_symbols', async () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jean-git-empty-target-'));
+        try {
+            fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
+            fs.writeFileSync(path.join(tmpDir, 'src', 'app.js'), 'export const ok = true;\n', 'utf8');
+
+            const emptyBlobAction = parseExecutableAction('krusch_git_read_blob({"repo":"demo-repo"})', tmpDir);
+            const blobRes = await executeSafeIntentInline(emptyBlobAction, tmpDir);
+            assert.equal(blobRes.ok, true);
+            assert.ok(blobRes.output.includes('missing file_path/blob_id for read_blob'));
+            assert.ok(blobRes.output.includes('src/app.js'));
+
+            const emptySymAction = parseExecutableAction('krusch_git_file_symbols({"repo":"demo-repo"})', tmpDir);
+            const symRes = await executeSafeIntentInline(emptySymAction, tmpDir);
+            assert.equal(symRes.ok, true);
+            assert.ok(symRes.output.includes('missing file_path for file_symbols'));
+            assert.ok(symRes.output.includes('src/app.js'));
+        } finally {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        }
     });
 });
 
